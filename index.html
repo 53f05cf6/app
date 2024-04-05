@@ -14,10 +14,29 @@
     {{ range . }}
     <li>
       <h2>{{ .Title }}</h2>
-      <time datetime="{{ .CreatedAt }}">{{ .CreatedAt }}</time>
+      <time datetime="{{ .CreatedAt }}">{{ .Format }}</time>
       <p>{{ .Content }}</p>
     </li>
     {{ end }}
 </body>
+
+<style>
+  body {
+    max-width: 640px;
+    padding: 16px;
+    margin: 0 auto;
+  }
+
+  h2 {
+    margin-bottom:0;
+    color: #333;
+  }
+
+  time {
+    font-size: 0.8em;
+    color: #666;
+  }
+</style>
+
 
 </html>

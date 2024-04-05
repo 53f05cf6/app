@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 	"html/template"
 	"log"
 	"net/http"
@@ -38,8 +37,6 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-
-		fmt.Println(news)
 
 		// print result
 		err = tmpl.Execute(w, news)
