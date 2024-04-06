@@ -7,6 +7,7 @@ type News struct {
 	Title     string
 	Content   string
 	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 func (n News) Format() string {
