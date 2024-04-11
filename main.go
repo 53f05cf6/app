@@ -16,7 +16,7 @@ func main() {
 	}
 	defer db.Close()
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/{$}", func(w http.ResponseWriter, r *http.Request) {
 		rows, err := db.Query("SELECT id, title, content, created_at FROM news ORDER BY id DESC")
 		if err != nil {
 			log.Fatal(err)
@@ -37,14 +37,13 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-
 		err = tmpl.Execute(w, news)
 		if err != nil {
 			log.Fatal(err)
 		}
 	})
 
-	http.HandleFunc("/news", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/news/{$}", func(w http.ResponseWriter, r *http.Request) {
 		err := r.ParseForm()
 		if err != nil {
 			log.Println("http.Request.ParseForm failed")
@@ -65,19 +64,19 @@ func main() {
 
 	})
 
-	http.HandleFunc("/news/{id}", func(w http.ResponseWriter, r *http.Request) {
-		err := r.ParseForm()
-		if err != nil {
-			log.Println("http.Request.ParseForm failed")
-			w.WriteHeader(400)
-			return
-		}
-
-		id := r.PathValue("id")
-
+	http.HandleFunc("/news/{id}/{$}", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPut:
-			_, err := db.Exec("UPDATE news SET title=?, content=?, updated_at=datetime() WHERE id = ?", r.Form.Get("title"), r.Form.Get("content"), id)
+			err := r.ParseForm()
+			if err != nil {
+				log.Println("http.Request.ParseForm failed")
+				w.WriteHeader(400)
+				return
+			}
+
+			id := r.PathValue("id")
+
+			_, err = db.Exec("UPDATE news SET title=?, content=?, updated_at=datetime() WHERE id = ?", r.Form.Get("title"), r.Form.Get("content"), id)
 			if err != nil {
 				log.Printf("db.Exec failed: %v", err)
 				return
