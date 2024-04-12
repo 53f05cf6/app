@@ -5,11 +5,16 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
 func main() {
+	if os.Getenv("PORT") == "" {
+		os.Setenv("PORT", "8080")
+	}
+
 	db, err := sql.Open("sqlite3", "ti.db")
 	if err != nil {
 		log.Fatal(err)
@@ -87,5 +92,5 @@ func main() {
 
 	})
 
-	http.ListenAndServe(":8080", nil)
+	http.ListenAndServe(":"+os.Getenv("PORT"), nil)
 }
