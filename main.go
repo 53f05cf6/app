@@ -48,49 +48,5 @@ func main() {
 		}
 	})
 
-	http.HandleFunc("/news/{$}", func(w http.ResponseWriter, r *http.Request) {
-		err := r.ParseForm()
-		if err != nil {
-			log.Println("http.Request.ParseForm failed")
-			w.WriteHeader(400)
-			return
-		}
-
-		switch r.Method {
-		case http.MethodPost:
-			_, err := db.Exec("INSERT INTO news (title, content, updated_at) VALUES (?, ?, datetime())", r.Form.Get("title"), r.Form.Get("content"))
-			if err != nil {
-				log.Printf("db.Exec failed: %v", err)
-				return
-			}
-		default:
-			w.WriteHeader(http.StatusMethodNotAllowed)
-		}
-
-	})
-
-	http.HandleFunc("/news/{id}/{$}", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodPut:
-			err := r.ParseForm()
-			if err != nil {
-				log.Println("http.Request.ParseForm failed")
-				w.WriteHeader(400)
-				return
-			}
-
-			id := r.PathValue("id")
-
-			_, err = db.Exec("UPDATE news SET title=?, content=?, updated_at=datetime() WHERE id = ?", r.Form.Get("title"), r.Form.Get("content"), id)
-			if err != nil {
-				log.Printf("db.Exec failed: %v", err)
-				return
-			}
-		default:
-			w.WriteHeader(http.StatusMethodNotAllowed)
-		}
-
-	})
-
 	http.ListenAndServe(":"+os.Getenv("PORT"), nil)
 }
