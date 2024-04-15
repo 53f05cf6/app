@@ -5,11 +5,27 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://unpkg.com/htmx.org@1.9.11"
+    integrity="sha384-0gxUXCCR8yv9FM2b+U3FDbsKthCI66oH5IA9fHppQq9DDMHuMauqq1ZHBpJxQ0J0"
+    crossorigin="anonymous"></script>
+
   <title>台島</title>
 </head>
 
 <body>
-  <h1>新聞</h1>
+  <!-- <h1>台島</h1> -->
+
+  <h2>天氣</h2>
+  <form hx-get="/weather/" hx-target="#weather" hx-swap="innerHTML" hx-disabled-elt="input[type='text'], button">
+    <input name="custom" placeholder="提供你的喜好及習慣，以便產生更適合你的建議" type="text"></input>
+    <button type="submit">天氣及穿衣建議</button>
+  </form>
+  <div id="weather"></div>
+  <h2>新聞</h2>
+  <form class="" hx-get="/news/" hx-target="#news" hx-swap="innerHTML" hx-disabled-elt="input[type='text'], button">
+    <input placeholder="告訴我你的喜好，以便找到你在意的新聞" type="text"></input>
+    <button type="submit">查看今天的新聞</button>
+  </form>
   <ul>
     {{ range . }}
     <li>
@@ -23,19 +39,15 @@
 
 <style>
   body {
-    max-width: 640px;
-    padding: 16px;
+    max-width: 560px;
+    padding: 40px;
     margin: 0 auto;
   }
 
-  h2 {
-    margin-bottom: 0;
-    color: #333;
-  }
-
-  time {
-    font-size: 0.8em;
-    color: #666;
+  form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
 </style>
 
