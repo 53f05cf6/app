@@ -17,8 +17,11 @@
 
   <h2>天氣</h2>
   <form hx-get="/weather/" hx-target="#weather" hx-swap="innerHTML" hx-disabled-elt="input[type='text'], button">
-    <input name="custom" placeholder="提供你的喜好及習慣，以便產生更適合你的建議" type="text"></input>
     <button type="submit">天氣及穿衣建議</button>
+    <details>
+      <summary>提供場合或偏好，以獲得個性化穿衣建議。</summary>
+      <input name="custom" placeholder="" type="text"></input>
+    </details>
   </form>
   <div id="weather"></div>
   <h2>新聞</h2>
@@ -48,6 +51,10 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+  }
+
+  input[type=text] {
+    width: 100%;
   }
 </style>
 
