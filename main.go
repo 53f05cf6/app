@@ -112,6 +112,8 @@ func main() {
 		queries := r.URL.Query()
 		switch r.Method {
 		case http.MethodGet:
+			loc, _ := time.LoadLocation("Asia/Taipei")
+			time.Now().In(loc)
 			now := time.Now().Format(time.RFC3339)[0:10]
 			f, err := os.ReadFile("./news/" + now + ".csv")
 			if err != nil {
