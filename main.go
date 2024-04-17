@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/sashabaranov/go-openai"
@@ -36,13 +38,28 @@ func main() {
 		log.Fatal("CWA token missing")
 	}
 
-	tmpl, err := template.ParseFiles("index.html")
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	http.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		tmpl, err := template.ParseFiles("index.html")
+		if err != nil {
+			log.Fatal(err)
+		}
+
 		err = tmpl.Execute(w, nil)
+		if err != nil {
+			log.Panic(err)
+		}
+	})
+
+	http.HandleFunc("GET /component/{comp}/{$}", func(w http.ResponseWriter, r *http.Request) {
+		compPath := fmt.Sprintf("./%s.html", r.PathValue("comp"))
+		tmpl, err := template.ParseFiles(compPath)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		queries := r.URL.Query()
+
+		err = tmpl.Execute(w, queries.Get("custom"))
 		if err != nil {
 			log.Panic(err)
 		}
@@ -89,11 +106,11 @@ func main() {
 		}
 
 		client := openai.NewClient(openAiToken)
-		resp, err := client.CreateChatCompletion(
-			context.Background(),
+		stream, err := client.CreateChatCompletionStream(context.Background(),
 			openai.ChatCompletionRequest{
 				Model:    openai.GPT4Turbo,
 				Messages: msgs,
+				Stream:   true,
 			},
 		)
 		if err != nil {
@@ -101,9 +118,32 @@ func main() {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
+		defer stream.Close()
 
-		snippet := []byte(resp.Choices[0].Message.Content)
-		w.Write(snippet)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		msg := ""
+		for {
+			response, err := stream.Recv()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+
+			if err != nil {
+				log.Panic(err)
+				break
+			}
+
+			msg += response.Choices[0].Delta.Content
+			msg = strings.ReplaceAll(msg, "\n", "")
+
+			fmt.Fprintf(w, "data: %s\n\n", msg)
+			w.(http.Flusher).Flush()
+		}
+
+		closeNotify := w.(http.CloseNotifier).CloseNotify()
+		<-closeNotify
 
 	})
 
