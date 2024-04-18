@@ -77,11 +77,13 @@ func main() {
 		json.Unmarshal(body, &cwa)
 
 		data := cwa.Csv()
+		loc, _ := time.LoadLocation("Asia/Taipei")
+		now := time.Now().In(loc)
 
 		msgs := []openai.ChatCompletionMessage{
 			{
 				Role:    openai.ChatMessageRoleSystem,
-				Content: "你是一個台灣天氣app助理，請依照`當下時間`,`一週天氣預報csv`與用戶的prompt給出合適的穿衣建議。\n當下時間:" + time.Now().String() + "\n一週天氣預報csv:\n" + data + "\n遵守以下規則:\n1. 使用台灣正體中文及html: <p>{當前天氣}</p><p>{穿衣建議}</p>\n2. 不預設用戶資訊所在地點\n3. 如果用戶輸入並非與功能相關則拒絕回答。\n4. 盡可能滿足用戶需求。",
+				Content: "你是一個台灣天氣app助理，請依照`當下時間`,`一週天氣預報csv`與用戶的prompt給出合適的穿衣建議。\n當下時間:" + now.Format(time.UnixDate) + "\n一週天氣預報csv:\n" + data + "\n遵守以下規則:\n1. 使用台灣正體中文及html: <p>{當前天氣}</p><p>{穿衣建議}</p>\n2. 不預設用戶資訊所在地點\n3. 如果用戶輸入並非與功能相關則拒絕回答。\n4. 盡可能滿足用戶需求。",
 			},
 		}
 
