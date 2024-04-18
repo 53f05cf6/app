@@ -51,7 +51,7 @@ func main() {
 	})
 
 	http.HandleFunc("GET /component/{comp}/{$}", func(w http.ResponseWriter, r *http.Request) {
-		compPath := fmt.Sprintf("./%s.html", r.PathValue("comp"))
+		compPath := fmt.Sprintf("./component/%s.html", r.PathValue("comp"))
 		tmpl, err := template.ParseFiles(compPath)
 		if err != nil {
 			log.Fatal(err)
@@ -66,32 +66,22 @@ func main() {
 	})
 
 	http.HandleFunc("GET /weather/{$}", func(w http.ResponseWriter, r *http.Request) {
-		cwaRes, err := http.Get("https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0003-001?Authorization=" + cwaToken)
+		cwaRes, err := http.Get("https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-091?Authorization=" + cwaToken)
 		if err != nil {
 			log.Panic(err)
 		}
 		defer cwaRes.Body.Close()
 		body, err := io.ReadAll(cwaRes.Body)
 
-		cwa := Cwa{}
+		cwa := CwaWeek{}
 		json.Unmarshal(body, &cwa)
 
-		var station Station
-		for _, s := range cwa.Records.Stations {
-			if s.GeoInfo.TownName == "中正區" {
-				station = s
-			}
-		}
-
-		bytes, err := json.Marshal(station)
-		if err != nil {
-			log.Panic(err)
-		}
+		data := cwa.Csv()
 
 		msgs := []openai.ChatCompletionMessage{
 			{
 				Role:    openai.ChatMessageRoleSystem,
-				Content: "你是一個台灣天氣app助理，你需要依照'當下時間'及'天氣數據'給出合適的穿衣建議;當下時間:" + time.Now().String() + ";天氣數據:" + string(bytes) + ";使用台灣正體中文;第一段為條列天氣數據第二段為穿衣建議及理由: <ul><li>中正區...</li><li>...</li><li>...</li></ul><p>...</p>，但是如果用戶提供偏好的介面需要因此做出用戶指定的回答。如果用戶輸入並非與功能相關則拒絕回答。",
+				Content: "你是一個台灣天氣app助理，請依照`當下時間`,`一週天氣預報csv`與用戶的prompt給出合適的穿衣建議。\n當下時間:" + time.Now().String() + "\n一週天氣預報csv:\n" + data + "\n遵守以下規則:\n1. 使用台灣正體中文及html: <p>{當前天氣}</p><p>{穿衣建議}</p>\n2. 不預設用戶資訊所在地點\n3. 如果用戶輸入並非與功能相關則拒絕回答。\n4. 盡可能滿足用戶需求。",
 			},
 		}
 
@@ -127,6 +117,8 @@ func main() {
 		for {
 			response, err := stream.Recv()
 			if errors.Is(err, io.EOF) {
+				fmt.Fprint(w, "event: end\ndata: end\n\n")
+				w.(http.Flusher).Flush()
 				break
 			}
 
