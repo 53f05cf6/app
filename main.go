@@ -149,7 +149,7 @@ func main() {
 			now := time.Now().In(loc).Format(time.RFC3339)[0:10]
 			f, err := os.ReadFile("./news/" + now + ".csv")
 			if err != nil {
-				log.Fatal("os.ReadFile failed")
+				log.Panic("os.ReadFile failed")
 			}
 
 			msgs := []openai.ChatCompletionMessage{
