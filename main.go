@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
@@ -14,18 +13,21 @@ import (
 	"time"
 
 	"github.com/sashabaranov/go-openai"
+
+	"53f05cf6/weather"
 )
 
 func main() {
-	logFile, err := os.OpenFile("./log", os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.SetOutput(logFile)
-
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
+	}
+	if port == "80" {
+		logFile, err := os.OpenFile("./log", os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.SetOutput(logFile)
 	}
 
 	openAiToken := os.Getenv("OPENAI_TOKEN")
@@ -33,13 +35,12 @@ func main() {
 		log.Fatal("OpenAI token missing")
 	}
 
-	cwaToken := os.Getenv("CWA_TOKEN")
-	if cwaToken == "" {
+	if os.Getenv("CWA_TOKEN") == "" {
 		log.Fatal("CWA token missing")
 	}
 
 	http.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		tmpl, err := template.ParseFiles("index.html")
+		tmpl, err := template.ParseFiles("index.html", "./component/chat-response.html")
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -59,54 +60,75 @@ func main() {
 
 		queries := r.URL.Query()
 
-		err = tmpl.Execute(w, queries.Get("custom"))
+		err = tmpl.ExecuteTemplate(w, r.PathValue("comp"), queries.Get("prompt"))
 		if err != nil {
 			log.Panic(err)
 		}
 	})
 
-	http.HandleFunc("GET /weather/{$}", func(w http.ResponseWriter, r *http.Request) {
-		cwaRes, err := http.Get("https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-091?Authorization=" + cwaToken)
+	http.HandleFunc("GET /chat/{$}", func(w http.ResponseWriter, r *http.Request) {
+		queries := r.URL.Query()
+
+		if queries.Get("test") == "true" {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Cache-Control", "no-cache")
+			w.Header().Set("Connection", "keep-alive")
+			msg := ""
+			for i := 0; i < 100; i++ {
+				msg += "go "
+
+				time.Sleep(time.Second / 10)
+				fmt.Fprintf(w, "data: %s\n\n", msg)
+				w.(http.Flusher).Flush()
+			}
+
+			fmt.Fprint(w, "event: end\ndata: end\n\n")
+			w.(http.Flusher).Flush()
+
+			closeNotify := w.(http.CloseNotifier).CloseNotify()
+			<-closeNotify
+			return
+		}
+
+		cwaWeek := weather.CwaWeek{}
+		err := cwaWeek.Get()
 		if err != nil {
 			log.Panic(err)
 		}
-		defer cwaRes.Body.Close()
-		body, err := io.ReadAll(cwaRes.Body)
 
-		cwa := CwaWeek{}
-		json.Unmarshal(body, &cwa)
-
-		data := cwa.Csv()
 		loc, _ := time.LoadLocation("Asia/Taipei")
 		now := time.Now().In(loc)
-
-		msgs := []openai.ChatCompletionMessage{
-			{
-				Role:    openai.ChatMessageRoleSystem,
-				Content: "你是一個台灣天氣app助理，請依照`當下時間`,`一週天氣預報csv`與用戶的prompt給出合適的穿衣建議。\n當下時間:" + now.Format(time.UnixDate) + "\n一週天氣預報csv:\n" + data + "\n遵守以下規則:\n1. 使用台灣正體中文及html: <p>{當前天氣}</p><p>{穿衣建議}</p>\n2. 不預設用戶資訊所在地點\n3. 如果用戶輸入並非與功能相關則拒絕回答。\n4. 盡可能滿足用戶需求。",
-			},
-		}
-
-		queries := r.URL.Query()
-		customMsg := queries.Get("custom")
-		if customMsg != "" {
-			msgs = append(msgs, openai.ChatCompletionMessage{
-				Role:    openai.ChatMessageRoleUser,
-				Content: customMsg,
-			})
-
-		}
+		systemPrompt := fmt.Sprintf(`
+你是台灣人的助理天氣app助理，請依照"當下時間","一週天氣預報csv"與"用戶的prompt"給出合適的穿衣建議。
+當下時間:%s
+一週天氣預報csv:
+%s
+遵守以下規則:
+1. 使用台灣正體中文及html: <p>{當前天氣}</p><p>{穿衣建議}</p>
+2. 不預設用戶資訊所在地點
+3. 如果用戶輸入並非與功能相關則拒絕回答。
+4. 盡可能滿足用戶需求。
+`, now, cwaWeek.Csv())
 
 		client := openai.NewClient(openAiToken)
 		stream, err := client.CreateChatCompletionStream(context.Background(),
 			openai.ChatCompletionRequest{
-				Model:    openai.GPT4Turbo,
-				Messages: msgs,
-				Stream:   true,
+				Model: openai.GPT4Turbo,
+				Messages: []openai.ChatCompletionMessage{
+					{
+						Role:    openai.ChatMessageRoleSystem,
+						Content: systemPrompt,
+					},
+					{
+						Role:    openai.ChatMessageRoleUser,
+						Content: queries.Get("prompt"),
+					},
+				},
+				Stream: true,
 			},
 		)
 		if err != nil {
-			log.Println(err)
+			log.Panic(err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
@@ -136,57 +158,7 @@ func main() {
 			w.(http.Flusher).Flush()
 		}
 
-		closeNotify := w.(http.CloseNotifier).CloseNotify()
-		<-closeNotify
-
-	})
-
-	http.HandleFunc("GET /news/{$}", func(w http.ResponseWriter, r *http.Request) {
-		queries := r.URL.Query()
-		switch r.Method {
-		case http.MethodGet:
-			loc, _ := time.LoadLocation("Asia/Taipei")
-			now := time.Now().In(loc).Format(time.RFC3339)[0:10]
-			f, err := os.ReadFile("./news/" + now + ".csv")
-			if err != nil {
-				log.Panic("os.ReadFile failed")
-			}
-
-			msgs := []openai.ChatCompletionMessage{
-				{
-					Role:    openai.ChatMessageRoleSystem,
-					Content: "你是一個新聞app，你需要依照一份csv檔給出合適的重點新聞;檔案格式為:source,news,link;檔案內容:" + string(f) + ";使用台灣正體中文;預設的輸出為一個html snippet:<p>{回應用戶顯示列表的總結及理由}</p><h2><a href=\"{link}\">{依照內文產生的一句總結}</a></h2><footer>{source}</footer>，但是如果用戶提供偏好的篩選或介面需要因此做出用戶指定的回答。如果用戶輸入並非與功能相關則拒絕回答。",
-				},
-			}
-
-			customMsg := queries.Get("custom")
-			if customMsg != "" {
-				msgs = append(msgs, openai.ChatCompletionMessage{
-					Role:    openai.ChatMessageRoleUser,
-					Content: customMsg,
-				})
-
-			}
-
-			client := openai.NewClient(openAiToken)
-			resp, err := client.CreateChatCompletion(
-				context.Background(),
-				openai.ChatCompletionRequest{
-					Model:    openai.GPT4Turbo,
-					Messages: msgs,
-				},
-			)
-
-			if err != nil {
-				fmt.Printf("ChatCompletion error: %v\n", err)
-				return
-			}
-
-			snippet := resp.Choices[0].Message.Content
-
-			w.Write([]byte(snippet))
-		}
-
+		<-r.Context().Done()
 	})
 
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
