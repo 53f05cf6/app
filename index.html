@@ -5,53 +5,25 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://unpkg.com/htmx.org@2.0.0-beta2/dist/htmx.min.js"></script>
-  <script src="https://unpkg.com/htmx-ext-sse@2.1.0/sse.js"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12"
+    integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2"
+    crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
   <title>台島</title>
 </head>
 
 <body>
-  <!-- <h1>台島</h1> -->
-  <h2>天氣</h2>
-  <form hx-get="/component/weather-sse/" hx-target="#weather-sse" hx-disabled-elt="input[type='text'], button">
-    <button type="submit">天氣及穿衣建議</button>
-    <details>
-      <summary>提供場合或偏好，以獲得客製化穿衣建議。</summary>
-      <input name="custom" type="text"></input>
-    </details>
-  </form>
-  <div id="weather-sse"></div>
-  <div id="weather"></div>
-  <hr style="margin-top:40px;">
-  <h2>新聞</h2>
-  <p>目前只有衛福部來源</p>
-  <form class="" hx-get="/news/" hx-target="#news" hx-swap="innerHTML" hx-disabled-elt="input[type='text'], button">
-    <button type="submit">查看今天的新聞</button>
-    <details>
-      <summary>提供場合或偏好，以獲得客製化的新聞資訊。</summary>
-      <input name="custom" type="text"></input>
-    </details>
-  </form>
-  <div id="news"></div>
+  <main>
+    <h1>台島</h1>
+    <p>台灣人的AI助手。(目前只有天氣的功能)</p>
+    <form hx-get="/component/chat-response/" hx-target="#chat" hx-swap="afterbegin" hx-on::after-request="this.reset()">
+      <label>今天可以怎麼幫你？</label>
+      <textarea required name="prompt"></textarea>
+      <input type="submit"></input>
+    </form>
+    <section id="chat">
+    </section>
+  </main>
 </body>
-
-<style>
-  body {
-    max-width: 560px;
-    padding: 40px;
-    margin: 0 auto;
-  }
-
-  form {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  input[type=text] {
-    width: 100%;
-  }
-</style>
-
 
 </html>
