@@ -1,8 +1,8 @@
 {{define "chat-response"}}
-<div hx-sse="connect:/chat/?prompt={{.}}">
-  <div> 你:
-    {{.}}
-  </div>
-  <div hx-sse="swap:message"></div>
+<br>
+<div hx-on::sse-message="onMessage(event)" hx-ext="sse" sse-close="end" sse-connect="/chat/?prompt={{.}}&test=true">
+  <strong> 你: {{.}} </strong f>
+  <blockquote sse-swap="message"></blockquote>
+  <div sse-swap="end"></div>
 </div>
 {{end}}
