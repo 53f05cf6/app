@@ -134,6 +134,8 @@ func main() {
 		}
 		defer stream.Close()
 
+		log.Printf("prompt: %s\n", queries.Get("prompt"))
+
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
