@@ -82,7 +82,7 @@ func main() {
 				w.(http.Flusher).Flush()
 			}
 
-			fmt.Fprint(w, "event: end\ndata: end\n\n")
+			fmt.Fprint(w, "event: end\ndata: \n\n")
 			w.(http.Flusher).Flush()
 
 			closeNotify := w.(http.CloseNotifier).CloseNotify()
