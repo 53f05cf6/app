@@ -143,7 +143,7 @@ func main() {
 		for {
 			response, err := stream.Recv()
 			if errors.Is(err, io.EOF) {
-				fmt.Fprint(w, "event: end\ndata: end\n\n")
+				fmt.Fprint(w, "event: end\ndata: \n\n")
 				w.(http.Flusher).Flush()
 				break
 			}
