@@ -195,7 +195,7 @@ func main() {
 					Messages: []openai.ChatCompletionMessage{
 						{
 							Role:    openai.ChatMessageRoleSystem,
-							Content: "根據用戶提供的prompt判斷需要的地點的天氣資訊並呼叫get_weather_info。可能會需要多筆location資訊。'所有'台'都轉換成'臺'。如果有地點但無指名是'縣'或'市'則一律當作'市'。如果沒有則要求用戶輸入。",
+							Content: "根據用戶提供的prompt判斷需要的地點的天氣資訊並呼叫get_weather_info。可能會需要多筆location資訊。'所有'台'都轉換成'臺'。如果有地點但無指名是'縣'或'市'則一律當作'市'。如果用戶沒有提供地點則要求用戶輸入地點。",
 						},
 						{
 							Role:    openai.ChatMessageRoleUser,
