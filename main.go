@@ -264,7 +264,7 @@ func main() {
 			now := time.Now().In(loc)
 			stream, err := client.CreateChatCompletionStream(ctx,
 				openai.ChatCompletionRequest{
-					Model: openai.GPT3Dot5Turbo,
+					Model: openai.GPT4Turbo,
 					Messages: []openai.ChatCompletionMessage{
 						{
 							Role: openai.ChatMessageRoleSystem,
