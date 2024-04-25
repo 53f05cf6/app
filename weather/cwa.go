@@ -23,6 +23,10 @@ func (cwaWeek *CwaWeek) Get(locations []string) error {
 		return errors.New("no locations")
 	}
 
+	if len(locations) > 2 {
+		return errors.New("too many locations")
+	}
+
 	locStr := strings.Join(locations, ",")
 	token := os.Getenv("CWA_TOKEN")
 	url := fmt.Sprintf("https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-091?locationName=%s&Authorization=%s", locStr, token)
