@@ -134,7 +134,8 @@ func main() {
 可以幫忙的的事情有以下:
 1.台灣的天氣跟外出穿衣建議
 遵守以下規則:
-如果同時詢問多筆資訊或不相關的事則告知功能
+1.使用台灣繁體正體中文回答
+2.如果同時詢問多筆資訊或不相關的事則告知功能
 `,
 				},
 				{
@@ -194,8 +195,15 @@ func main() {
 					Model: openai.GPT3Dot5Turbo,
 					Messages: []openai.ChatCompletionMessage{
 						{
-							Role:    openai.ChatMessageRoleSystem,
-							Content: "根據用戶提供的prompt判斷需要的地點的天氣資訊並呼叫get_weather_info。可能會需要多筆location資訊。'所有'台'都轉換成'臺'。如果有地點但無指名是'縣'或'市'則一律當作'市'。如果用戶沒有提供地點則要求用戶輸入地點。如果地點不在台灣則拒絕回答。",
+							Role: openai.ChatMessageRoleSystem,
+							Content: `
+根據用戶提供的prompt判斷需要的地點的天氣資訊並呼叫get_weather_info。可能會需要多筆location資訊。
+遵守以下規則:
+1.使用台灣繁體正體中文回答
+2.'所有'台'都轉換成'臺'
+3.如果有地點但無指名是'縣'或'市'則一律當作'市'
+4.如果用戶沒有提供地點則要求用戶輸入地點
+5.如果地點不在台灣則拒絕回答`,
 						},
 						{
 							Role:    openai.ChatMessageRoleUser,
@@ -272,7 +280,9 @@ func main() {
 你是台灣人的助理天氣app助理，請依照"當下時間","一週天氣預報csv"與"用戶的prompt"給出合適的穿衣建議。
 當下時間:%s
 一週天氣預報csv: %s 
-遵守以下規則: 1. 使用台灣正體中文及html: <p>{當前天氣}</p><p>{穿衣建議}</p>
+遵守以下規則:
+1.使用台灣繁體正體中文回答
+2.回傳html: <p>{當前天氣}</p><p>{穿衣建議}</p>
 `, now, cwaWeek.Csv()),
 						},
 						{
