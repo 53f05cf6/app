@@ -297,6 +297,7 @@ func main() {
 			for {
 				response, err := stream.Recv()
 				if errors.Is(err, io.EOF) {
+					log.Printf("response: %s", msg)
 					fmt.Fprint(w, "event: end\ndata: \n\n")
 					w.(http.Flusher).Flush()
 					break
