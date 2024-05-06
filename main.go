@@ -71,7 +71,7 @@ func main() {
 			dp = newDp
 			log.Println(dp)
 
-			now := time.Now()
+			now := time.Now().In(loc)
 			h := now.Hour()
 			today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 
