@@ -88,6 +88,7 @@ func main() {
 				sleepDuration = today.Add(32 * time.Hour).Sub(now)
 			}
 
+			log.Println(sleepDuration.String())
 			time.Sleep(sleepDuration)
 		}
 	}()
