@@ -186,7 +186,7 @@ loop:
 		case openai.RunStatusFailed:
 			return "", errors.New(run.LastError.Message)
 		case openai.RunStatusCompleted:
-			log.Printf("cost: %d TWD", getCost(run.Usage))
+			log.Printf("cost: %.2f TWD", getCost(run.Usage))
 			break loop
 		}
 	}
@@ -206,6 +206,6 @@ loop:
 	return messages.Messages[0].Content[0].Text.Value, nil
 }
 
-func getCost(usage openai.Usage) int {
-	return int((float32(usage.PromptTokens)*0.01 + float32(usage.CompletionTokens)*0.03) * 32)
+func getCost(usage openai.Usage) float32 {
+	return (float32(usage.PromptTokens)*0.01 + float32(usage.CompletionTokens)*0.03) * 32 / 1000
 }
