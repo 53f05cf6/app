@@ -2,7 +2,7 @@ module 53f05cf6
 
 go 1.22.2
 
-require github.com/sashabaranov/go-openai v1.21.0
+require github.com/sashabaranov/go-openai v1.23.0
 
 require (
 	github.com/PuerkitoBio/goquery v1.8.0 // indirect

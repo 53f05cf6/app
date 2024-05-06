@@ -7,38 +7,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://unpkg.com/htmx.org@2.0.0-beta3/dist/htmx.js"></script>
   <script src="https://unpkg.com/htmx-ext-sse@2.1.0/sse.js"></script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.sand.min.css" />
   <title>台島</title>
 </head>
 
 <body>
   <main class="container">
     <h1>台島</h1>
-    <blockquote>台灣人的AI助手。(目前只有天氣的功能)</blockquote>
-    <form id="form" hx-get="/component/chat-response/" hx-target="#chat" hx-swap="afterbegin"
-      hx-on::after-request="this.reset()">
-      <label>今天可以怎麼幫你？</label>
-      <textarea required name="prompt"></textarea>
-      <input type="submit"></input>
-    </form>
-    <section id="chat">
-    </section>
+    {{.}}
   </main>
 </body>
 
-<script>
-  function onMessage(e) {
-    switch (e.detail.type) {
-      case "message":
-        document.getElementsByTagName("textarea")[0].setAttribute("disabled", "")
-        document.getElementsByTagName("input")[0].setAttribute("disabled", "")
-        break
-      case "end":
-        document.getElementsByTagName("textarea")[0].removeAttribute("disabled")
-        document.getElementsByTagName("input")[0].removeAttribute("disabled")
-        break
-    }
+<style>
+  main {
+    max-width: 640px;
+    margin-left: auto;
+    margin-right: auto;
   }
-</script>
+
+  img {
+    width: 100%;
+  }
+</style>
 
 </html>
