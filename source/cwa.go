@@ -71,9 +71,9 @@ func (f36h Forecast36Hours) String() string {
 			case "PoP":
 				str += fmt.Sprintf("降雨機率%s%%, ", we.Time[0].Parameter.ParameterName)
 			case "MinT":
-				str += fmt.Sprintf("最高溫%sC, ", we.Time[0].Parameter.ParameterName)
-			case "MaxT":
 				str += fmt.Sprintf("最低溫%sC, ", we.Time[0].Parameter.ParameterName)
+			case "MaxT":
+				str += fmt.Sprintf("最高溫%sC, ", we.Time[0].Parameter.ParameterName)
 			case "CI":
 				str += fmt.Sprintf("%s, ", we.Time[0].Parameter.ParameterName)
 			}
