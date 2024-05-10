@@ -2,28 +2,41 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"database/sql"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"html/template"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/sashabaranov/go-openai"
+	"github.com/twilio/twilio-go"
+	verify "github.com/twilio/twilio-go/rest/verify/v2"
 
 	"53f05cf6/source"
 )
 
 var (
-	loc, _      = time.LoadLocation("Asia/Taipei")
-	port        = "8080"
-	openAiToken string
-	assistantId string
-	cwaToken    string
-	logFile     string
-	cfg         openai.ClientConfig
+	loc, _          = time.LoadLocation("Asia/Taipei")
+	port            = "8080"
+	openAiToken     string
+	assistantId     string
+	cwaToken        string
+	twilioServiceId string
+	logFile         string
+	cfg             openai.ClientConfig
+	sessions        = map[string]string{"test": "you@hsuyuting.com"}
 )
+
+type User struct {
+	email string `field:""`
+}
 
 func main() {
 	if p, ok := os.LookupEnv("PORT"); ok {
@@ -56,6 +69,20 @@ func main() {
 		log.Fatal("CWA token missing")
 	} else {
 		cwaToken = t
+	}
+
+	if _, ok := os.LookupEnv("TWILIO_AUTH_TOKEN"); !ok {
+		log.Fatal("Twilio auth token missing")
+	}
+
+	if _, ok := os.LookupEnv("TWILIO_ACCOUNT_SID"); !ok {
+		log.Fatal("Twilio account sid missing")
+	}
+
+	if t, ok := os.LookupEnv("TWILIO_SERVICE_ID"); !ok {
+		log.Fatal("Twilio service id missing")
+	} else {
+		twilioServiceId = t
 	}
 
 	dp := ""
@@ -94,12 +121,39 @@ func main() {
 	}()
 
 	http.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		tmpl, err := template.ParseFiles("index.html")
+		email := ""
+		name := ""
+		if cookie, err := r.Cookie("session"); err == nil && sessions[cookie.Value] != "" {
+			email = sessions[cookie.Value]
+
+			db, err := sql.Open("sqlite3", "./db")
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer db.Close()
+
+			if err := db.QueryRow("SELECT name FROM users WHERE email = ?", email).Scan(&name); err == sql.ErrNoRows {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			} else if err != nil {
+				log.Println(err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+		}
+
+		m := map[string]any{
+			"dp":    template.HTML(dp),
+			"name":  name,
+			"email": email,
+		}
+
+		tmpl, err := template.ParseFiles("./component/index.html")
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		err = tmpl.Execute(w, template.HTML(dp))
+		err = tmpl.Execute(w, m)
 		if err != nil {
 			log.Panic(err)
 		}
@@ -115,6 +169,130 @@ func main() {
 		queries := r.URL.Query()
 
 		err = tmpl.ExecuteTemplate(w, r.PathValue("comp"), queries.Get("prompt"))
+		if err != nil {
+			log.Panic(err)
+		}
+	})
+
+	http.HandleFunc("GET /login/{$}", func(w http.ResponseWriter, r *http.Request) {
+		tmpl, err := template.ParseFiles("./component/login.html")
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		err = tmpl.Execute(w, nil)
+		if err != nil {
+			log.Panic(err)
+		}
+	})
+
+	http.HandleFunc("POST /login/{$}", func(w http.ResponseWriter, r *http.Request) {
+		email := r.FormValue("email")
+		log.Printf("login: %s try to login", email)
+
+		params := &verify.CreateVerificationParams{}
+		params.SetTo(email)
+		params.SetChannel("email")
+
+		client := twilio.NewRestClient()
+		_, err := client.VerifyV2.CreateVerification(twilioServiceId, params)
+		if err != nil {
+			log.Panic(err)
+		}
+
+		w.Header().Add("HX-Redirect", fmt.Sprintf("/verify/?email=%s", email))
+	})
+
+	http.HandleFunc("GET /verify/{$}", func(w http.ResponseWriter, r *http.Request) {
+		tmpl, err := template.ParseFiles("./component/verify.html")
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		query := r.URL.Query()
+
+		err = tmpl.Execute(w, query.Get("email"))
+		if err != nil {
+			log.Panic(err)
+		}
+	})
+
+	http.HandleFunc("POST /verify/{$}", func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query()
+		code := r.FormValue("code")
+		email := query.Get("email")
+		log.Printf("verify: %s", email)
+
+		params := &verify.CreateVerificationCheckParams{}
+		params.SetTo(email)
+		params.SetCode(code)
+
+		client := twilio.NewRestClient()
+		resp, err := client.VerifyV2.CreateVerificationCheck(twilioServiceId, params)
+		if err != nil {
+			log.Panic(err)
+		}
+
+		log.Println(*resp.Status)
+		if *resp.Status != "approved" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		defaultName := strings.Split(email, "@")[0]
+
+		db, err := sql.Open("sqlite3", "./db")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer db.Close()
+
+		if _, err := db.Exec("INSERT INTO users (email, name) VALUES (?, ?) ON CONFLICT(email) DO NOTHING", email, defaultName); err != nil {
+			log.Panic(err)
+		}
+
+		sessionId := createRandomString()
+		sessions[sessionId] = email
+
+		log.Println(sessions)
+
+		cookie := http.Cookie{Name: "session", Value: sessionId, Path: "/"}
+		http.SetCookie(w, &cookie)
+	})
+
+	http.HandleFunc("GET /setting/{$}", func(w http.ResponseWriter, r *http.Request) {
+		tmpl, err := template.ParseFiles("./component/setting.html")
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		email := ""
+		if cookie, err := r.Cookie("session"); err == nil {
+			email = sessions[cookie.Value]
+		}
+
+		db, err := sql.Open("sqlite3", "./db")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer db.Close()
+
+		name := ""
+		if err := db.QueryRow("SELECT name FROM users WHERE email = ?", email).Scan(&name); err == sql.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		} else if err != nil {
+			log.Println(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		m := map[string]string{
+			"name":  name,
+			"email": email,
+		}
+
+		err = tmpl.Execute(w, m)
 		if err != nil {
 			log.Panic(err)
 		}
@@ -208,4 +386,14 @@ loop:
 
 func getCost(usage openai.Usage) float32 {
 	return (float32(usage.PromptTokens)*0.01 + float32(usage.CompletionTokens)*0.03) * 32 / 1000
+}
+
+func createRandomString() string {
+	bytes := make([]byte, 32)
+	_, err := rand.Read(bytes)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	return base64.URLEncoding.EncodeToString(bytes)
 }
