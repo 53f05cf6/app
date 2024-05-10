@@ -148,7 +148,7 @@ func main() {
 			"email": email,
 		}
 
-		tmpl, err := template.ParseFiles("./component/index.html")
+		tmpl, err := template.ParseFiles("./component/layout.html", "./component/index.html")
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -175,7 +175,7 @@ func main() {
 	})
 
 	http.HandleFunc("GET /login/{$}", func(w http.ResponseWriter, r *http.Request) {
-		tmpl, err := template.ParseFiles("./component/login.html")
+		tmpl, err := template.ParseFiles("./component/layout.html", "./component/login.html")
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -204,7 +204,7 @@ func main() {
 	})
 
 	http.HandleFunc("GET /verify/{$}", func(w http.ResponseWriter, r *http.Request) {
-		tmpl, err := template.ParseFiles("./component/verify.html")
+		tmpl, err := template.ParseFiles("./component/layout.html", "./component/verify.html")
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -261,7 +261,7 @@ func main() {
 	})
 
 	http.HandleFunc("GET /setting/{$}", func(w http.ResponseWriter, r *http.Request) {
-		tmpl, err := template.ParseFiles("./component/setting.html")
+		tmpl, err := template.ParseFiles("./component/layout.html", "./component/setting.html")
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -298,12 +298,28 @@ func main() {
 		}
 	})
 
+	http.HandleFunc("GET /help/{$}", func(w http.ResponseWriter, r *http.Request) {
+		tmpl, err := template.ParseFiles("./component/layout.html", "./component/help.html")
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		err = tmpl.Execute(w, nil)
+		if err != nil {
+			log.Panic(err)
+		}
+	})
+
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
 		log.Fatal(err)
 	}
 }
 
 func createDefaultPage() (string, error) {
+	// if port == "8080" {
+	// 	return "page", nil
+	// }
+
 	ctx := context.Background()
 	weather := source.Forecast36Hours{Token: cwaToken}
 	weather.Get()

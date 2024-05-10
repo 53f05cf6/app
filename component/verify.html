@@ -1,44 +1,21 @@
-<!DOCTYPE html>
+{{define "header"}}
+<a href="/"> 台島 </a>
+<nav>
+  {{if .email}}
+  <a href="/setting/">{{.name}}</a>
+  {{else}}
+  <a href="/login/">登入</a>
+  {{end}}
+</nav>
+{{end}}
 
-<html lang="zh-Hans-TW">
-
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://unpkg.com/htmx.org@2.0.0-beta3/dist/htmx.js"></script>
-  <script src="https://unpkg.com/htmx-ext-sse@2.1.0/sse.js"></script>
-  <title>台島</title>
-</head>
-
-<body>
-  <main>
-    <h1>信箱驗證</h1>
-    <form hx-post="/verify/?email={{.}}" hx-on:htmx:after-request="redirect()">
-      <label>
-        6位數驗證碼
-        <input name="code" type="text" required placeholder="123456" />
-      </label>
-      <input type="submit" />
-    </form>
-  </main>
-</body>
-
-<style>
-  main {
-    max-width: 640px;
-    margin-left: auto;
-    margin-right: auto;
-  }
-
-  img {
-    width: 100%;
-  }
-</style>
-
-<script>
-  function redirect() {
-    window.location.href = "/"
-  }
-</script>
-
-</html>
+{{define "main"}}
+<h2>信箱驗證</h2>
+<form hx-post="/verify/?email={{.}}" hx-on:htmx:after-request="redirect()">
+  <label>
+    6位數驗證碼
+    <input name="code" type="text" required placeholder="123456" />
+  </label>
+  <input type="submit" />
+</form>
+{{end}}
