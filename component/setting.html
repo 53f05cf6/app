@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+
+<html lang="zh-Hans-TW">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://unpkg.com/htmx.org@2.0.0-beta3/dist/htmx.js"></script>
+  <script src="https://unpkg.com/htmx-ext-sse@2.1.0/sse.js"></script>
+  <title>台島</title>
+</head>
+
+<body>
+  <main>
+    <h1>設定</h1>
+    {{.email}}
+    <form>
+      <label>
+        你是誰？
+        <input type="text" name="name" required value={{.name}} />
+      </label>
+      <input type="submit" />
+    </form>
+  </main>
+</body>
+
+<style>
+  main {
+    max-width: 640px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  img {
+    width: 100%;
+  }
+</style>
+
+</html>

@@ -11,9 +11,13 @@
 </head>
 
 <body>
-  <main class="container">
-    <h1>台島</h1>
-    {{.}}
+  <main>
+    {{if .email }}
+    {{.email}}
+    {{else}}
+    <a href="/login/">登入</a>
+    {{end}}
+    {{.dp}}
   </main>
 </body>
 
