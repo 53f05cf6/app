@@ -1,0 +1,26 @@
+[
+  {
+    "type": "RSS",
+    "name": "報導者",
+    "site": "https://www.twreporter.org/",
+    "feed": "https://public.twreporter.org/rss/twreporter-rss.xml"
+  },
+  {
+    "type": "RSS",
+    "name": "公視新聞",
+    "site": "https://news.pts.org.tw/",
+    "feed": "https://news.pts.org.tw/xml/newsfeed.xml"
+  },
+  {
+    "type": "RSS",
+    "name": "ETtoday",
+    "site": "https://www.ettoday.net/",
+    "feed": "https://feeds.feedburner.com/ettoday/realtime"
+  },
+  {
+    "type": "RSS",
+    "name": "自由時報",
+    "site": "https://www.ltn.com.tw/",
+    "feed": "https://news.ltn.com.tw/rss/all.xml"
+  }
+]

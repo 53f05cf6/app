@@ -1,0 +1,44 @@
+{{define "header"}}
+<a href="/"> 台島 </a>
+<nav>
+  <a href="/help/">說明</a>
+  <a href="mailto:you@hsuyuting.com">意見回饋</a>
+  {{if .user}}
+  <a href="/setting/">{{.user.Name}}</a>
+  {{else}}
+  <a href="/login/">登入</a>
+  {{end}}
+</nav>
+{{end}}
+
+{{define "main"}}
+{{if .user}}
+<form style="padding-top:16px;display:flex;flex-direction:column;gap:8px" hx-post="/ask/" hx-swap="none"
+  hx-disabled-elt="textarea,input[type='checkbox'],input[type='submit']">
+  <div>
+    {{range .sources}}
+    <label style="display:flex;justify-content:space-between;">
+      <a href="{{.Site}}" target="_blank"> {{.Name}} </a>
+      <input type="checkbox" id="{{.Name}}" name="{{.Name}}" {{if index $.user.Sources .Name}}checked{{end}} />
+    </label>
+    {{end}}
+  </div>
+  <label style="display:flex;flex-direction:column;gap:8px;">
+    <strong>你想知道些什麼？</strong>
+    <textarea name="prompt">{{.user.Prompt}}</textarea>
+  </label>
+  <input type="submit" />
+</form>
+
+<div hx-ext="sse" sse-connect="/feed/" sse-swap="message">
+  {{.user.Feed}}
+</div>
+
+
+{{else}}
+<h1 style="text-align:center">讓AI幫助你了解台灣的最新動態</h1>
+<div style="text-align:center">
+  <a href="/login/"> 開始試用 </a>
+</div>
+{{end}}
+{{end}}
