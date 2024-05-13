@@ -31,7 +31,7 @@ var (
 	twilioServiceId string
 	logFile         string
 	cfg             openai.ClientConfig
-	sessions        = map[string]string{"testing": "you@hsuyuting.com"}
+	sessions        = map[string]string{}
 	sources         []Source
 	feedChans       = map[string](chan string){}
 )
@@ -386,8 +386,9 @@ func main() {
 		}
 
 		systemPrompt := fmt.Sprintf(`
-你的目標是幫助用戶瞭解台灣發生的動態。
-你會擁有一些網路上的新聞或資訊，請只利用你所知道的資訊一步一步思考幫助用戶生產出最適合用戶回答。
+你的目標是幫助用戶了解台灣發生的新聞
+請只利用你所知道的知識，回答用戶想要知道的內容
+如果沒有相關的內容則拒絕回答
 遵守以下規則:
 1.輸出必須是台灣正體中文
 2.輸出必須是html
@@ -399,10 +400,9 @@ func main() {
 <p>{內容}</p>
 <a href="{連結}">{連結}</a>
 </article>
-現在時間:%s
-你擁有以下csv資訊:
-%s
-html: `, now.Format(time.DateTime), csv)
+---
+現在時間: %s
+knowledge: %s`, now.Format(time.DateTime), csv)
 		client := openai.NewClientWithConfig(cfg)
 		stream, err := client.CreateChatCompletionStream(r.Context(), openai.ChatCompletionRequest{
 			Model: openai.GPT4Turbo,
@@ -413,7 +413,7 @@ html: `, now.Format(time.DateTime), csv)
 				},
 				{
 					Role:    openai.ChatMessageRoleUser,
-					Content: prompt,
+					Content: fmt.Sprintf("我想知道: %s", prompt),
 				},
 			},
 		})
@@ -435,6 +435,11 @@ html: `, now.Format(time.DateTime), csv)
 				if _, err := db.Exec("UPDATE users SET feed = ?", msg); err != nil {
 					log.Panic(err)
 				}
+				log.Println("---")
+				log.Println(email)
+				log.Println(prompt)
+				log.Println(msg)
+				log.Println("---")
 				break
 			}
 
