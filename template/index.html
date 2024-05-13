@@ -16,6 +16,7 @@
 <form style="padding-top:16px;display:flex;flex-direction:column;gap:8px" hx-post="/ask/" hx-swap="none"
   hx-disabled-elt="textarea,input[type='checkbox'],input[type='submit']">
   <div>
+    <strong>新聞來源</strong>
     {{range .sources}}
     <label style="display:flex;justify-content:space-between;">
       <a href="{{.Site}}" target="_blank"> {{.Name}} </a>

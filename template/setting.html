@@ -4,7 +4,7 @@
 
 {{define "main"}}
 <h2>帳號</h2>
-<form style="display: flex; flex-direction: column; gap: 8px;">
+<form style="display: flex; flex-direction: column; gap: 8px;" hx-put="/setting/">
   <label>
     Email
     <input type="email" disabled value={{.email}} />
