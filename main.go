@@ -1,13 +1,14 @@
 package main
 
 import (
-	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -15,11 +16,10 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/mmcdole/gofeed"
 	"github.com/sashabaranov/go-openai"
 	"github.com/twilio/twilio-go"
 	verify "github.com/twilio/twilio-go/rest/verify/v2"
-
-	"53f05cf6/source"
 )
 
 var (
@@ -31,11 +31,30 @@ var (
 	twilioServiceId string
 	logFile         string
 	cfg             openai.ClientConfig
-	sessions        = map[string]string{"test": "you@hsuyuting.com"}
+	sessions        = map[string]string{"8IOaPG_xmk_AS_bDGyiXE5Z_ZFN287wJhBX5ffOlWkg=": "you@hsuyuting.com"}
+	sources         []Source
+	feedChans       = map[string](chan string){}
 )
 
 type User struct {
-	email string `field:""`
+	Email   *string
+	Name    *string
+	Prompt  *string
+	Sources map[string]bool
+	Feed    template.HTML
+}
+
+type SourceType string
+
+const (
+	SourceTypeRSS SourceType = "RSS"
+)
+
+type Source struct {
+	Type SourceType `json:"type"`
+	Name string     `json:"name"`
+	Site string     `json:"site"`
+	Feed string     `json:"feed"`
 }
 
 func main() {
@@ -85,46 +104,19 @@ func main() {
 		twilioServiceId = t
 	}
 
-	dp := ""
-	go func() {
-		for {
-			newDp, err := createDefaultPage()
-			if err != nil {
-				log.Println(err)
-				time.Sleep(5 * time.Minute)
-				continue
-			}
-
-			dp = newDp
-			log.Println(dp)
-
-			now := time.Now().In(loc)
-			h := now.Hour()
-			today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
-
-			var sleepDuration time.Duration
-			if h >= 0 && h < 8 {
-				sleepDuration = today.Add(8 * time.Hour).Sub(now)
-			} else if h >= 8 && h < 12 {
-				sleepDuration = today.Add(12 * time.Hour).Sub(now)
-			} else if h >= 12 && h < 16 {
-				sleepDuration = today.Add(16 * time.Hour).Sub(now)
-			} else if h >= 16 && h < 20 {
-				sleepDuration = today.Add(20 * time.Hour).Sub(now)
-			} else {
-				sleepDuration = today.Add(32 * time.Hour).Sub(now)
-			}
-
-			log.Println(sleepDuration.String())
-			time.Sleep(sleepDuration)
-		}
-	}()
+	if f, err := os.ReadFile("sources.json"); err != nil {
+		log.Fatal("cannot read sources file")
+	} else if err := json.Unmarshal(f, &sources); err != nil {
+		log.Fatal("cannot unmarshal sources file")
+	}
 
 	http.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		email := ""
-		name := ""
+		var user *User
 		if cookie, err := r.Cookie("session"); err == nil && sessions[cookie.Value] != "" {
-			email = sessions[cookie.Value]
+			email := sessions[cookie.Value]
+			user = &User{
+				Email: &email,
+			}
 
 			db, err := sql.Open("sqlite3", "./db")
 			if err != nil {
@@ -132,23 +124,33 @@ func main() {
 			}
 			defer db.Close()
 
-			if err := db.QueryRow("SELECT name FROM users WHERE email = ?", email).Scan(&name); err == sql.ErrNoRows {
-				w.WriteHeader(http.StatusNotFound)
-				return
+			var sourcesStr *string
+			var feedStr *string
+
+			if err := db.QueryRow("SELECT name, prompt, sources, feed FROM users WHERE email = ?", user.Email).Scan(&user.Name, &user.Prompt, &sourcesStr, &feedStr); err == sql.ErrNoRows {
+				log.Printf("user not found: %s", *user.Email)
+				user = nil
 			} else if err != nil {
 				log.Println(err)
 				w.WriteHeader(http.StatusInternalServerError)
 				return
+			} else if sourcesStr != nil {
+				userSources := strings.Split(*sourcesStr, ",")
+				user.Sources = map[string]bool{}
+				for _, s := range userSources {
+					user.Sources[s] = true
+				}
 			}
+
+			user.Feed = template.HTML(*feedStr)
 		}
 
 		m := map[string]any{
-			"dp":    template.HTML(dp),
-			"name":  name,
-			"email": email,
+			"sources": sources,
+			"user":    user,
 		}
 
-		tmpl, err := template.ParseFiles("./component/layout.html", "./component/index.html")
+		tmpl, err := template.ParseFiles("./template/layout.html", "./template/index.html")
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -159,23 +161,8 @@ func main() {
 		}
 	})
 
-	http.HandleFunc("GET /component/{comp}/{$}", func(w http.ResponseWriter, r *http.Request) {
-		compPath := fmt.Sprintf("./component/%s.html", r.PathValue("comp"))
-		tmpl, err := template.ParseFiles(compPath)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		queries := r.URL.Query()
-
-		err = tmpl.ExecuteTemplate(w, r.PathValue("comp"), queries.Get("prompt"))
-		if err != nil {
-			log.Panic(err)
-		}
-	})
-
 	http.HandleFunc("GET /login/{$}", func(w http.ResponseWriter, r *http.Request) {
-		tmpl, err := template.ParseFiles("./component/layout.html", "./component/login.html")
+		tmpl, err := template.ParseFiles("./template/layout.html", "./template/login.html")
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -204,7 +191,7 @@ func main() {
 	})
 
 	http.HandleFunc("GET /verify/{$}", func(w http.ResponseWriter, r *http.Request) {
-		tmpl, err := template.ParseFiles("./component/layout.html", "./component/verify.html")
+		tmpl, err := template.ParseFiles("./template/layout.html", "./template/verify.html")
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -247,7 +234,7 @@ func main() {
 		}
 		defer db.Close()
 
-		if _, err := db.Exec("INSERT INTO users (email, name) VALUES (?, ?) ON CONFLICT(email) DO NOTHING", email, defaultName); err != nil {
+		if _, err := db.Exec("INSERT INTO users (email, name, prompt, sources, feed) VALUES (?, ?, ?, ?, ?) ON CONFLICT(email) DO NOTHING", email, defaultName, "", "", ""); err != nil {
 			log.Panic(err)
 		}
 
@@ -261,7 +248,7 @@ func main() {
 	})
 
 	http.HandleFunc("GET /setting/{$}", func(w http.ResponseWriter, r *http.Request) {
-		tmpl, err := template.ParseFiles("./component/layout.html", "./component/setting.html")
+		tmpl, err := template.ParseFiles("./template/layout.html", "./template/setting.html")
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -299,7 +286,7 @@ func main() {
 	})
 
 	http.HandleFunc("GET /help/{$}", func(w http.ResponseWriter, r *http.Request) {
-		tmpl, err := template.ParseFiles("./component/layout.html", "./component/help.html")
+		tmpl, err := template.ParseFiles("./template/layout.html", "./template/help.html")
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -310,98 +297,174 @@ func main() {
 		}
 	})
 
+	http.HandleFunc("POST /ask/{$}", func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("session")
+		if err != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		if sessions[cookie.Value] == "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		email := sessions[cookie.Value]
+		prompt := r.FormValue("prompt")
+		userSources := getSourcesString(r)
+		sourcesStr := strings.Join(userSources, ",")
+
+		db, err := sql.Open("sqlite3", "./db")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer db.Close()
+
+		if _, err := db.Exec("UPDATE users SET sources = ?, prompt = ? WHERE email = ?", sourcesStr, prompt, email); err != nil {
+			log.Panic(err)
+		}
+
+		m := map[string]struct{}{}
+		for _, source := range userSources {
+			m[source] = struct{}{}
+		}
+
+		now := time.Now().In(loc)
+		csv := "標題,說明,時間,連結URL,圖片URL\n"
+		for _, source := range sources {
+			if _, ok := m[source.Name]; !ok {
+				continue
+			}
+
+			fp := gofeed.NewParser()
+			feed, _ := fp.ParseURL(source.Feed)
+			for _, item := range feed.Items {
+				if now.Sub(*item.PublishedParsed) > 24*time.Hour {
+					continue
+				}
+
+				imgUrl := "n/a"
+				if item.Image != nil {
+					imgUrl = item.Image.URL
+				}
+
+				csv += fmt.Sprintf("%s,%s,%s,%s,%s\n", item.Title, item.Description, item.PublishedParsed.Format(time.DateTime), item.Link, imgUrl)
+
+			}
+
+		}
+
+		systemPrompt := fmt.Sprintf(`
+你的目標是幫助用戶瞭解台灣發生的動態。
+你會擁有一些網路上的新聞或資訊，請只利用你所知道的資訊一步一步思考幫助用戶生產出最適合用戶回答。
+遵守以下規則:
+1.輸出必須是台灣正體中文
+2.輸出必須是html
+3.切勿使用codeblock
+4.勿使用<html><head><body>tags
+5.如果用戶未指定樣板則使用下面模板:
+<article>
+<h2>{標題}</h2>
+<p>{內容}</p>
+<a href="{連結}">{連結}</a>
+</article>
+現在時間:%s
+你擁有以下csv資訊:
+%s
+html: `, now.Format(time.DateTime), csv)
+		client := openai.NewClientWithConfig(cfg)
+		stream, err := client.CreateChatCompletionStream(r.Context(), openai.ChatCompletionRequest{
+			Model: openai.GPT4Turbo,
+			Messages: []openai.ChatCompletionMessage{
+				{
+					Role:    openai.ChatMessageRoleSystem,
+					Content: systemPrompt,
+				},
+				{
+					Role:    openai.ChatMessageRoleUser,
+					Content: prompt,
+				},
+			},
+		})
+		defer stream.Close()
+		if err != nil {
+			log.Panic(err)
+		}
+
+		if feedChans[email] == nil {
+			log.Panic("no feed channel found: " + email)
+			return
+		}
+
+		ch := feedChans[email]
+		msg := ""
+		for {
+			response, err := stream.Recv()
+			if errors.Is(err, io.EOF) {
+				if _, err := db.Exec("UPDATE users SET feed = ?", msg); err != nil {
+					log.Panic(err)
+				}
+				break
+			}
+
+			if err != nil {
+				log.Panic(err)
+				return
+			}
+
+			msg += strings.ReplaceAll(response.Choices[0].Delta.Content, "\n", "")
+			ch <- msg
+		}
+
+		w.WriteHeader(http.StatusOK)
+	})
+
+	http.HandleFunc("GET /feed/{$}", func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("session")
+		if err != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		if sessions[cookie.Value] == "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		email := sessions[cookie.Value]
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+
+		feedChans[email] = make(chan string)
+		for feed := range feedChans[email] {
+			fmt.Fprintf(w, "data: %s\n\n", feed)
+		}
+
+		delete(feedChans, email)
+	})
+
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func createDefaultPage() (string, error) {
-	// if port == "8080" {
-	// 	return "page", nil
-	// }
-
-	ctx := context.Background()
-	weather := source.Forecast36Hours{Token: cwaToken}
-	weather.Get()
-	client := openai.NewClientWithConfig(cfg)
-	run, err := client.CreateThreadAndRun(ctx, openai.CreateThreadAndRunRequest{
-		RunRequest: openai.RunRequest{
-			AssistantID: assistantId,
-			Model:       openai.GPT4Turbo,
-		},
-		Thread: openai.ThreadRequest{
-			Messages: []openai.ThreadMessage{
-				{
-					Role: openai.ThreadMessageRoleUser,
-					Content: fmt.Sprintf(`
-請依以下資訊及需求總結出有用的內容。
-當下時間:%s
-資訊:
-{%s}
-輸出規則:台灣各區域天氣總結及當下穿衣建議並考慮時間點，並不要使用任何codeblock，只輸出html。區域後面挑選適合的天氣emoji[ 🌤️ ⛅ 🌥️ 🌦️ ☁️ 🌧️ ⛈️ 🌩️ ☀️]
-輸出範例:
-<h2>天氣</h2>
-<p>更新時間: <time>{當下時間}</time></p>
-<img src="https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Observation/O-C0042-002.jpg" />
-<h3>北部 {emoji}</h3>
-<p>{天氣資訊及穿衣建議}</p>
-<h3>中部 {emoji}</h3>
-<p>{天氣資訊及穿衣建議}</p>
-<h3>南部 {emoji}</h3>
-<p>{天氣資訊及穿衣建議}</p>
-<h3>東部 {emoji}</h3>
-<p>{天氣資訊及穿衣建議}</p>
-<h3>外島 {emoji}</h3>
-<p>{天氣資訊及穿衣建議}</p>
-`, time.Now().In(loc).Format(time.DateTime), weather.String()),
-				},
-			},
-		},
-	})
-	if err != nil {
-		return "", err
-	}
-
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
-loop:
-	for range ticker.C {
-		run, err := client.RetrieveRun(ctx, run.ThreadID, run.ID)
-		if err != nil {
-			return "", nil
-		}
-
-		switch run.Status {
-		case openai.RunStatusQueued:
-			fallthrough
-		case openai.RunStatusInProgress:
-			continue
-		case openai.RunStatusFailed:
-			return "", errors.New(run.LastError.Message)
-		case openai.RunStatusCompleted:
-			log.Printf("cost: %.2f TWD", getCost(run.Usage))
-			break loop
-		}
-	}
-
-	order := "desc"
-	limit := 1
-	messages, err := client.ListMessage(ctx, run.ThreadID, &limit, &order, nil, nil)
-
-	if err != nil {
-		return "", nil
-	}
-
-	if len(messages.Messages) < 1 {
-		return "", errors.New("no message found")
-	}
-
-	return messages.Messages[0].Content[0].Text.Value, nil
-}
-
 func getCost(usage openai.Usage) float32 {
 	return (float32(usage.PromptTokens)*0.01 + float32(usage.CompletionTokens)*0.03) * 32 / 1000
+}
+
+func getSourcesString(r *http.Request) []string {
+	strs := []string{}
+	for _, source := range sources {
+		on := r.FormValue(source.Name)
+		if on == "" {
+			continue
+		}
+
+		strs = append(strs, source.Name)
+	}
+
+	return strs
 }
 
 func createRandomString() string {

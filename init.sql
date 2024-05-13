@@ -1,1 +1,7 @@
-CREATE TABLE users (email varchar(320) NOT null primary key, name varchar(64));
+CREATE TABLE users(
+	email VARCHAR(320) NOT NULL PRIMARY KEY,
+	name VARCHAR(64),
+	prompt TEXT,
+	sources TEXT,
+	feed TEXT
+);
