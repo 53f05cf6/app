@@ -31,7 +31,7 @@ var (
 	twilioServiceId string
 	logFile         string
 	cfg             openai.ClientConfig
-	sessions        = map[string]string{"8IOaPG_xmk_AS_bDGyiXE5Z_ZFN287wJhBX5ffOlWkg=": "you@hsuyuting.com"}
+	sessions        = map[string]string{"testing": "you@hsuyuting.com"}
 	sources         []Source
 	feedChans       = map[string](chan string){}
 )
@@ -234,7 +234,7 @@ func main() {
 		}
 		defer db.Close()
 
-		if _, err := db.Exec("INSERT INTO users (email, name, prompt, sources, feed) VALUES (?, ?, ?, ?, ?) ON CONFLICT(email) DO NOTHING", email, defaultName, "", "", ""); err != nil {
+		if _, err := db.Exec("INSERT INTO users (email, name, prompt, sources, feed) VALUES (?, ?, ?, ?, ?) ON CONFLICT(email) DO NOTHING", email, defaultName, "幫我條列台灣最近的政治新聞", "報導者", ""); err != nil {
 			log.Panic(err)
 		}
 
@@ -283,6 +283,37 @@ func main() {
 		if err != nil {
 			log.Panic(err)
 		}
+	})
+
+	http.HandleFunc("PUT /setting/{$}", func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("session")
+		if err != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		if sessions[cookie.Value] == "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		db, err := sql.Open("sqlite3", "./db")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer db.Close()
+
+		name := r.FormValue("name")
+		if name == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		if _, err := db.Exec("UPDATE users SET name = ?", name); err != nil {
+			log.Panic(err)
+		}
+
+		w.Header().Add("HX-Redirect", "/")
 	})
 
 	http.HandleFunc("GET /help/{$}", func(w http.ResponseWriter, r *http.Request) {
