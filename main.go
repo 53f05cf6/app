@@ -405,7 +405,7 @@ func main() {
 knowledge: %s`, now.Format(time.DateTime), csv)
 		client := openai.NewClientWithConfig(cfg)
 		stream, err := client.CreateChatCompletionStream(r.Context(), openai.ChatCompletionRequest{
-			Model: openai.GPT4Turbo,
+			Model: openai.GPT4o,
 			Messages: []openai.ChatCompletionMessage{
 				{
 					Role:    openai.ChatMessageRoleSystem,
