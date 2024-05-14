@@ -254,7 +254,7 @@ func main() {
 <h2>{標題}</h2>
 <p>{內容}</p>
 <a href="{連結}">{連結}</a>
-</article>`, "報導者", ""); err != nil {
+</article>`, "報導者,公視新聞,ETtoday,自由時報,天氣-臺北市", ""); err != nil {
 			log.Panic(err)
 		}
 
