@@ -247,7 +247,14 @@ func main() {
 		}
 		defer db.Close()
 
-		if _, err := db.Exec("INSERT INTO users (email, name, prompt, sources, feed) VALUES (?, ?, ?, ?, ?) ON CONFLICT(email) DO NOTHING", email, defaultName, "幫我條列台灣最近的政治新聞", "報導者", ""); err != nil {
+		if _, err := db.Exec("INSERT INTO users (email, name, prompt, sources, feed) VALUES (?, ?, ?, ?, ?) ON CONFLICT(email) DO NOTHING", email, defaultName, `第一段幫我總結今天的天氣及穿衣建議。
+第二段幫我條列台灣最近的社會新聞
+新聞遵守以下樣板：
+<article>
+<h2>{標題}</h2>
+<p>{內容}</p>
+<a href="{連結}">{連結}</a>
+</article>`, "報導者", ""); err != nil {
 			log.Panic(err)
 		}
 
@@ -259,14 +266,7 @@ func main() {
 
 		id := base64.URLEncoding.EncodeToString(bytes)
 
-		if _, err := db.Exec("INSERT INTO sessions (id, email) VALUES (?, ?)", id, email, `第一段幫我總結今天的天氣及穿衣建議。
-第二段幫我條列台灣最近的社會新聞
-新聞遵守以下樣板：
-<article>
-<h2>{標題}</h2>
-<p>{內容}</p>
-<a href="{連結}">{連結}</a>
-</article>`, "報導者", ""); err != nil {
+		if _, err := db.Exec("INSERT INTO sessions (id, email) VALUES (?, ?)", id, email); err != nil {
 			log.Panic(err)
 		}
 
