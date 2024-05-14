@@ -5,3 +5,9 @@ CREATE TABLE users(
 	sources TEXT,
 	feed TEXT
 );
+
+CREATE TABLE sessions(
+	id VARCHAR(256),
+	email VARCHAR(320),
+	created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);

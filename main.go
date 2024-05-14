@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -31,7 +32,6 @@ var (
 	twilioServiceId string
 	logFile         string
 	cfg             openai.ClientConfig
-	sessions        = map[string]string{}
 	sources         []Source
 	feedChans       = map[string](chan string){}
 )
@@ -110,44 +110,57 @@ func main() {
 		log.Fatal("cannot unmarshal sources file")
 	}
 
+	go func() {
+		for {
+			db := openDB()
+			t := timeNow().Add(-7 * 24 * time.Hour)
+			if _, err := db.Exec("DELETE FROM sessions WHERE created_at < ?", t.Format(time.DateTime)); err != nil {
+				log.Println(err)
+				time.Sleep(time.Minute)
+				db.Close()
+				continue
+			}
+			db.Close()
+
+			now := timeNow()
+			time.Sleep(time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).Add(24 * time.Hour).Sub(now))
+		}
+	}()
+
 	http.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		var user *User
-		if cookie, err := r.Cookie("session"); err == nil && sessions[cookie.Value] != "" {
-			email := sessions[cookie.Value]
-			user = &User{
+		m := map[string]any{
+			"sources": sources,
+		}
+
+		email, err := getLoggedInUserEmail(r)
+		if err == nil {
+			user := &User{
 				Email: &email,
 			}
 
-			db, err := sql.Open("sqlite3", "./db")
-			if err != nil {
-				log.Fatal(err)
-			}
-			defer db.Close()
-
+			db := openDB()
 			var sourcesStr *string
 			var feedStr *string
-
-			if err := db.QueryRow("SELECT name, prompt, sources, feed FROM users WHERE email = ?", user.Email).Scan(&user.Name, &user.Prompt, &sourcesStr, &feedStr); err == sql.ErrNoRows {
-				log.Printf("user not found: %s", *user.Email)
+			if err := db.QueryRow("SELECT name, prompt, sources, feed FROM users WHERE email = ?", email).Scan(&user.Name, &user.Prompt, &sourcesStr, &feedStr); err == sql.ErrNoRows {
+				log.Printf("user not found: %s", email)
 				user = nil
 			} else if err != nil {
 				log.Println(err)
 				w.WriteHeader(http.StatusInternalServerError)
 				return
-			} else if sourcesStr != nil {
-				userSources := strings.Split(*sourcesStr, ",")
-				user.Sources = map[string]bool{}
-				for _, s := range userSources {
-					user.Sources[s] = true
+			} else {
+				if sourcesStr != nil {
+					userSources := strings.Split(*sourcesStr, ",")
+					user.Sources = map[string]bool{}
+					for _, s := range userSources {
+						user.Sources[s] = true
+					}
 				}
+
+				user.Feed = template.HTML(*feedStr)
+				m["user"] = user
 			}
 
-			user.Feed = template.HTML(*feedStr)
-		}
-
-		m := map[string]any{
-			"sources": sources,
-			"user":    user,
 		}
 
 		tmpl, err := template.ParseFiles("./template/layout.html", "./template/index.html")
@@ -238,12 +251,26 @@ func main() {
 			log.Panic(err)
 		}
 
-		sessionId := createRandomString()
-		sessions[sessionId] = email
+		bytes := make([]byte, 32)
+		_, err = rand.Read(bytes)
+		if err != nil {
+			log.Panic(err)
+		}
 
-		log.Println(sessions)
+		id := base64.URLEncoding.EncodeToString(bytes)
 
-		cookie := http.Cookie{Name: "session", Value: sessionId, Path: "/"}
+		if _, err := db.Exec("INSERT INTO sessions (id, email) VALUES (?, ?)", id, email, `第一段幫我總結今天的天氣及穿衣建議。
+第二段幫我條列台灣最近的社會新聞
+新聞遵守以下樣板：
+<article>
+<h2>{標題}</h2>
+<p>{內容}</p>
+<a href="{連結}">{連結}</a>
+</article>`, "報導者", ""); err != nil {
+			log.Panic(err)
+		}
+
+		cookie := http.Cookie{Name: "session", Value: id, Path: "/"}
 		http.SetCookie(w, &cookie)
 	})
 
@@ -253,17 +280,14 @@ func main() {
 			log.Fatal(err)
 		}
 
-		email := ""
-		if cookie, err := r.Cookie("session"); err == nil {
-			email = sessions[cookie.Value]
-		}
-
-		db, err := sql.Open("sqlite3", "./db")
+		email, err := getLoggedInUserEmail(r)
 		if err != nil {
-			log.Fatal(err)
+			w.WriteHeader(http.StatusUnauthorized)
+			log.Println(err)
+			return
 		}
-		defer db.Close()
 
+		db := openDB()
 		name := ""
 		if err := db.QueryRow("SELECT name FROM users WHERE email = ?", email).Scan(&name); err == sql.ErrNoRows {
 			w.WriteHeader(http.StatusNotFound)
@@ -285,72 +309,28 @@ func main() {
 		}
 	})
 
-	http.HandleFunc("PUT /setting/{$}", func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie("session")
-		if err != nil {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-
-		if sessions[cookie.Value] == "" {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-
-		db, err := sql.Open("sqlite3", "./db")
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer db.Close()
-
-		name := r.FormValue("name")
-		if name == "" {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
-		if _, err := db.Exec("UPDATE users SET name = ?", name); err != nil {
-			log.Panic(err)
-		}
-
-		w.Header().Add("HX-Redirect", "/")
-	})
-
-	http.HandleFunc("GET /help/{$}", func(w http.ResponseWriter, r *http.Request) {
-		tmpl, err := template.ParseFiles("./template/layout.html", "./template/help.html")
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		err = tmpl.Execute(w, nil)
-		if err != nil {
-			log.Panic(err)
-		}
-	})
-
 	http.HandleFunc("POST /ask/{$}", func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie("session")
+		email, err := getLoggedInUserEmail(r)
 		if err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
+			log.Println(err)
 			return
 		}
 
-		if sessions[cookie.Value] == "" {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-
-		email := sessions[cookie.Value]
 		prompt := r.FormValue("prompt")
-		userSources := getSourcesString(r)
+
+		userSources := []string{}
+		for _, source := range sources {
+			on := r.FormValue(source.Name)
+			if on == "" {
+				continue
+			}
+
+			userSources = append(userSources, source.Name)
+		}
 		sourcesStr := strings.Join(userSources, ",")
 
-		db, err := sql.Open("sqlite3", "./db")
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer db.Close()
-
+		db := openDB()
 		if _, err := db.Exec("UPDATE users SET sources = ?, prompt = ? WHERE email = ?", sourcesStr, prompt, email); err != nil {
 			log.Panic(err)
 		}
@@ -387,22 +367,16 @@ func main() {
 
 		systemPrompt := fmt.Sprintf(`
 你的目標是幫助用戶了解台灣發生的新聞
-請只利用你所知道的知識，回答用戶想要知道的內容
-如果沒有相關的內容則拒絕回答
+只利用prompt所知道的知識回答用戶想要知道的內容。
 遵守以下規則:
 1.輸出必須是台灣正體中文
 2.輸出必須是html
 3.切勿使用codeblock
 4.勿使用<html><head><body>tags
-5.如果用戶未指定樣板則使用下面模板:
-<article>
-<h2>{標題}</h2>
-<p>{內容}</p>
-<a href="{連結}">{連結}</a>
-</article>
+5.如果沒有相關的知識則拒絕回答
 ---
 現在時間: %s
-knowledge: %s`, now.Format(time.DateTime), csv)
+知識: %s`, now.Format(time.DateTime), csv)
 		client := openai.NewClientWithConfig(cfg)
 		stream, err := client.CreateChatCompletionStream(r.Context(), openai.ChatCompletionRequest{
 			Model: openai.GPT4o,
@@ -456,28 +430,63 @@ knowledge: %s`, now.Format(time.DateTime), csv)
 	})
 
 	http.HandleFunc("GET /feed/{$}", func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie("session")
+		email, err := getLoggedInUserEmail(r)
 		if err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
+			log.Println(err)
 			return
 		}
-
-		if sessions[cookie.Value] == "" {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		email := sessions[cookie.Value]
 
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
 
-		feedChans[email] = make(chan string)
-		for feed := range feedChans[email] {
+		var mux sync.Mutex
+		ch := make(chan string)
+
+		mux.Lock()
+		feedChans[email] = ch
+		mux.Unlock()
+
+		for feed := range ch {
 			fmt.Fprintf(w, "data: %s\n\n", feed)
 		}
 
 		delete(feedChans, email)
+	})
+
+	http.HandleFunc("PUT /setting/{$}", func(w http.ResponseWriter, r *http.Request) {
+		email, err := getLoggedInUserEmail(r)
+		if err != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			log.Println(err)
+			return
+		}
+
+		name := r.FormValue("name")
+		if name == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		db := openDB()
+		if _, err := db.Exec("UPDATE users SET name = ? WHERE email = ?", name, email); err != nil {
+			log.Panic(err)
+		}
+
+		w.Header().Add("HX-Redirect", "/")
+	})
+
+	http.HandleFunc("GET /help/{$}", func(w http.ResponseWriter, r *http.Request) {
+		tmpl, err := template.ParseFiles("./template/layout.html", "./template/help.html")
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		err = tmpl.Execute(w, nil)
+		if err != nil {
+			log.Panic(err)
+		}
 	})
 
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
@@ -485,30 +494,36 @@ knowledge: %s`, now.Format(time.DateTime), csv)
 	}
 }
 
-func getCost(usage openai.Usage) float32 {
-	return (float32(usage.PromptTokens)*0.01 + float32(usage.CompletionTokens)*0.03) * 32 / 1000
-}
-
-func getSourcesString(r *http.Request) []string {
-	strs := []string{}
-	for _, source := range sources {
-		on := r.FormValue(source.Name)
-		if on == "" {
-			continue
-		}
-
-		strs = append(strs, source.Name)
-	}
-
-	return strs
-}
-
-func createRandomString() string {
-	bytes := make([]byte, 32)
-	_, err := rand.Read(bytes)
+func openDB() *sql.DB {
+	db, err := sql.Open("sqlite3", "./db")
 	if err != nil {
 		log.Panic(err)
 	}
 
-	return base64.URLEncoding.EncodeToString(bytes)
+	return db
+}
+
+var (
+	ErrUserNotLoggedIn = errors.New("user not logged in")
+)
+
+func getLoggedInUserEmail(r *http.Request) (string, error) {
+	db := openDB()
+	defer db.Close()
+
+	cookie, err := r.Cookie("session")
+	if err != nil {
+		return "", ErrUserNotLoggedIn
+	}
+
+	email := ""
+	if err := db.QueryRow("SELECT email FROM sessions WHERE id = ?", cookie.Value).Scan(&email); err != nil {
+		return "", ErrUserNotLoggedIn
+	}
+
+	return email, nil
+}
+
+func timeNow() time.Time {
+	return time.Now().In(loc)
 }
