@@ -247,14 +247,8 @@ func main() {
 		}
 		defer db.Close()
 
-		if _, err := db.Exec("INSERT INTO users (email, name, prompt, sources, feed) VALUES (?, ?, ?, ?, ?) ON CONFLICT(email) DO NOTHING", email, defaultName, `第一段幫我總結今天的天氣及穿衣建議。
-第二段幫我條列台灣最近的社會新聞
-新聞遵守以下樣板：
-<article>
-<h2>{標題}</h2>
-<p>{內容}</p>
-<a href="{連結}">{連結}</a>
-</article>`, "報導者,公視新聞,ETtoday,自由時報,天氣-臺北市", ""); err != nil {
+		if _, err := db.Exec("INSERT INTO users (email, name, prompt, sources, feed) VALUES (?, ?, ?, ?, ?) ON CONFLICT(email) DO NOTHING", email, defaultName, `台灣今天有什麼重大新聞?
+今天出門該怎麼穿？`, ""); err != nil {
 			log.Panic(err)
 		}
 
