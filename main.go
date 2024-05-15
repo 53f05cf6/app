@@ -400,7 +400,7 @@ func main() {
 		for {
 			response, err := stream.Recv()
 			if errors.Is(err, io.EOF) {
-				if _, err := db.Exec("UPDATE users SET feed = ?", msg); err != nil {
+				if _, err := db.Exec("UPDATE users SET feed = ? WHERE email = ?", msg, email); err != nil {
 					log.Panic(err)
 				}
 				log.Println("---")
