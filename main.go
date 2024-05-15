@@ -248,7 +248,7 @@ func main() {
 		defer db.Close()
 
 		if _, err := db.Exec("INSERT INTO users (email, name, prompt, sources, feed) VALUES (?, ?, ?, ?, ?) ON CONFLICT(email) DO NOTHING", email, defaultName, `台灣今天有什麼重大新聞?
-今天出門該怎麼穿？`, ""); err != nil {
+今天出門該怎麼穿？`, "報導者,公視新聞,ETtoday,自由時報", ""); err != nil {
 			log.Panic(err)
 		}
 
