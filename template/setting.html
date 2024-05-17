@@ -11,7 +11,11 @@
   </label>
   <label>
     名稱
-    <input type="text" name="name" required value={{.name}} />
+    <input type="text" name="name" required value="{{.name}}" />
+  </label>
+  <label>
+    訂閱<strong>台島</strong>更新電子報
+    <input type="checkbox" name="subscribe" {{if .subscribe }}checked{{end}} />
   </label>
   <input type="submit" />
 </form>
