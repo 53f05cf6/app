@@ -122,7 +122,7 @@ func main() {
 			db.Close()
 
 			now := time.Now()
-			time.Sleep(time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, nil).Add(24 * time.Hour).Sub(now))
+			time.Sleep(time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).Add(24 * time.Hour).Sub(now))
 		}
 	}()
 
