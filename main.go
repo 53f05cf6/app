@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -113,7 +112,7 @@ func main() {
 	go func() {
 		for {
 			db := openDB()
-			t := timeNow().Add(-7 * 24 * time.Hour)
+			t := time.Now().Add(-7 * 24 * time.Hour)
 			if _, err := db.Exec("DELETE FROM sessions WHERE created_at < ?", t.Format(time.DateTime)); err != nil {
 				log.Println(err)
 				time.Sleep(time.Minute)
@@ -122,8 +121,8 @@ func main() {
 			}
 			db.Close()
 
-			now := timeNow()
-			time.Sleep(time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).Add(24 * time.Hour).Sub(now))
+			now := time.Now()
+			time.Sleep(time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, nil).Add(24 * time.Hour).Sub(now))
 		}
 	}()
 
@@ -134,6 +133,7 @@ func main() {
 
 		email, err := getLoggedInUserEmail(r)
 		if err == nil {
+			log.Printf("user visit: %s", email)
 			user := &User{
 				Email: &email,
 			}
@@ -303,12 +303,10 @@ func main() {
 		}
 	})
 
-	http.HandleFunc("POST /ask/{$}", func(w http.ResponseWriter, r *http.Request) {
-		email, err := getLoggedInUserEmail(r)
+	http.HandleFunc("POST /template/search/{$}", func(w http.ResponseWriter, r *http.Request) {
+		tmpl, err := template.ParseFiles("./template/search.html")
 		if err != nil {
-			w.WriteHeader(http.StatusUnauthorized)
-			log.Println(err)
-			return
+			log.Fatal(err)
 		}
 
 		prompt := r.FormValue("prompt")
@@ -322,7 +320,32 @@ func main() {
 
 			userSources = append(userSources, source.Name)
 		}
+
 		sourcesStr := strings.Join(userSources, ",")
+
+		m := map[string]string{
+			"prompt":  prompt,
+			"sources": sourcesStr,
+		}
+
+		err = tmpl.Execute(w, m)
+		if err != nil {
+			log.Panic(err)
+		}
+	})
+
+	http.HandleFunc("GET /search/{$}", func(w http.ResponseWriter, r *http.Request) {
+		email, err := getLoggedInUserEmail(r)
+		if err != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			log.Println(err)
+			return
+		}
+
+		query := r.URL.Query()
+		prompt := query.Get("prompt")
+		sourcesStr := query.Get("sources")
+		userSources := strings.Split(sourcesStr, ",")
 
 		db := openDB()
 		if _, err := db.Exec("UPDATE users SET sources = ?, prompt = ? WHERE email = ?", sourcesStr, prompt, email); err != nil {
@@ -334,7 +357,7 @@ func main() {
 			m[source] = struct{}{}
 		}
 
-		now := time.Now().In(loc)
+		now := time.Now()
 		csv := "標題,說明,時間,連結URL,圖片URL\n"
 		for _, source := range sources {
 			if _, ok := m[source.Name]; !ok {
@@ -390,16 +413,16 @@ func main() {
 			log.Panic(err)
 		}
 
-		if feedChans[email] == nil {
-			log.Panic("no feed channel found: " + email)
-			return
-		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
 
-		ch := feedChans[email]
 		msg := ""
 		for {
 			response, err := stream.Recv()
 			if errors.Is(err, io.EOF) {
+				fmt.Fprintf(w, "event: end\ndata: \n\n")
+
 				if _, err := db.Exec("UPDATE users SET feed = ? WHERE email = ?", msg, email); err != nil {
 					log.Panic(err)
 				}
@@ -417,36 +440,8 @@ func main() {
 			}
 
 			msg += strings.ReplaceAll(response.Choices[0].Delta.Content, "\n", "")
-			ch <- msg
+			fmt.Fprintf(w, "data: %s\n\n", msg)
 		}
-
-		w.WriteHeader(http.StatusOK)
-	})
-
-	http.HandleFunc("GET /feed/{$}", func(w http.ResponseWriter, r *http.Request) {
-		email, err := getLoggedInUserEmail(r)
-		if err != nil {
-			w.WriteHeader(http.StatusUnauthorized)
-			log.Println(err)
-			return
-		}
-
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Connection", "keep-alive")
-
-		var mux sync.Mutex
-		ch := make(chan string)
-
-		mux.Lock()
-		feedChans[email] = ch
-		mux.Unlock()
-
-		for feed := range ch {
-			fmt.Fprintf(w, "data: %s\n\n", feed)
-		}
-
-		delete(feedChans, email)
 	})
 
 	http.HandleFunc("PUT /setting/{$}", func(w http.ResponseWriter, r *http.Request) {
@@ -516,8 +511,4 @@ func getLoggedInUserEmail(r *http.Request) (string, error) {
 	}
 
 	return email, nil
-}
-
-func timeNow() time.Time {
-	return time.Now().In(loc)
 }
