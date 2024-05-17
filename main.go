@@ -283,7 +283,8 @@ func main() {
 
 		db := openDB()
 		name := ""
-		if err := db.QueryRow("SELECT name FROM users WHERE email = ?", email).Scan(&name); err == sql.ErrNoRows {
+		subscribe := false
+		if err := db.QueryRow("SELECT name, subscribe FROM users WHERE email = ?", email).Scan(&name, &subscribe); err == sql.ErrNoRows {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		} else if err != nil {
@@ -292,9 +293,10 @@ func main() {
 			return
 		}
 
-		m := map[string]string{
-			"name":  name,
-			"email": email,
+		m := map[string]any{
+			"name":      name,
+			"subscribe": subscribe,
+			"email":     email,
 		}
 
 		err = tmpl.Execute(w, m)
