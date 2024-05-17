@@ -383,13 +383,14 @@ func main() {
 		}
 
 		systemPrompt := fmt.Sprintf(`
-你的目標是幫助用戶了解台灣發生的新聞
+你的目標是幫助用戶了解台灣發生的新聞。
 只利用prompt所知道的知識回答用戶想要知道的內容。
 遵守以下規則:
 1.輸出必須是html
 2.切勿使用codeblock
 3.勿使用<html><head><body>tags
 4.根據以下的知識回答
+5.只輸出跟用戶需求相關的內容
 ---
 現在時間: %s
 知識: %s`, now.Format(time.DateTime), csv)
@@ -457,8 +458,13 @@ func main() {
 			return
 		}
 
+		subscribe := false
+		if r.FormValue("subscribe") == "on" {
+			subscribe = true
+		}
+
 		db := openDB()
-		if _, err := db.Exec("UPDATE users SET name = ? WHERE email = ?", name, email); err != nil {
+		if _, err := db.Exec("UPDATE users SET name = ?, subscribe  = ? WHERE email = ?", name, subscribe, email); err != nil {
 			log.Panic(err)
 		}
 
