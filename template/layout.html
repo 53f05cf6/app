@@ -11,11 +11,20 @@
   <link href="/styles.css/" rel="stylesheet" />
 </head>
 
-<body>
-  <header>
-    {{ template "header" . }}
+<body class="text-slate-700 bg-slate-100">
+  <header class="flex items-baseline justify-between p-4">
+    <a class="text-2xl font-bold" href="/"> 台島 </a>
+    <nav class="flex gap-2">
+      <a href="/help/">說明</a>
+      <a href="mailto:you@hsuyuting.com">意見回饋</a>
+      {{if .user}}
+      <a href="/setting/">{{.user.Name}}</a>
+      {{else}}
+      <a href="/login/">登入</a>
+      {{end}}
+    </nav>
   </header>
-  <main>
+  <main class="max-w-lg mx-auto p-2">
     {{ template "main" . }}
   </main>
 </body>

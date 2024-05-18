@@ -36,11 +36,13 @@ var (
 )
 
 type User struct {
-	Email   *string
-	Name    *string
-	Prompt  *string
-	Sources map[string]bool
-	Feed    template.HTML
+	Email     string
+	Name      string
+	Prompt    string
+	Sources   map[string]bool
+	Feed      template.HTML
+	Template  string
+	Subscribe bool
 }
 
 type SourceType string
@@ -114,7 +116,6 @@ func main() {
 			db := openDB()
 			t := time.Now().Add(-7 * 24 * time.Hour)
 			if _, err := db.Exec("DELETE FROM sessions WHERE created_at < ?", t.Format(time.DateTime)); err != nil {
-				log.Println(err)
 				time.Sleep(time.Minute)
 				db.Close()
 				continue
@@ -126,71 +127,10 @@ func main() {
 		}
 	}()
 
-	http.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		m := map[string]any{
-			"sources": sources,
-		}
-
-		email, err := getLoggedInUserEmail(r)
-		if err == nil {
-			log.Printf("user visit: %s", email)
-			user := &User{
-				Email: &email,
-			}
-
-			db := openDB()
-			var sourcesStr *string
-			var feedStr *string
-			if err := db.QueryRow("SELECT name, prompt, sources, feed FROM users WHERE email = ?", email).Scan(&user.Name, &user.Prompt, &sourcesStr, &feedStr); err == sql.ErrNoRows {
-				log.Printf("user not found: %s", email)
-				user = nil
-			} else if err != nil {
-				log.Println(err)
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			} else {
-				if sourcesStr != nil {
-					userSources := strings.Split(*sourcesStr, ",")
-					user.Sources = map[string]bool{}
-					for _, s := range userSources {
-						user.Sources[s] = true
-					}
-				}
-
-				user.Feed = template.HTML(*feedStr)
-				m["user"] = user
-			}
-
-		}
-
-		tmpl, err := template.ParseFiles("./template/layout.html", "./template/index.html")
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		err = tmpl.Execute(w, m)
-		if err != nil {
-			log.Panic(err)
-		}
-	})
-
-	http.HandleFunc("GET /login/{$}", func(w http.ResponseWriter, r *http.Request) {
-		tmpl, err := template.ParseFiles("./template/layout.html", "./template/login.html")
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		err = tmpl.Execute(w, nil)
-		if err != nil {
-			log.Panic(err)
-		}
-	})
-
 	http.HandleFunc("GET /styles.css/{$}", func(w http.ResponseWriter, r *http.Request) {
 		asset, err := os.ReadFile("assets/styles.css")
 		if err != nil {
-			w.WriteHeader(http.StatusNotFound)
-			return
+			log.Fatal(err)
 		}
 
 		w.Header().Add("Content-Type", "text/css")
@@ -202,8 +142,7 @@ func main() {
 	http.HandleFunc("GET /htmx-sse.js/{$}", func(w http.ResponseWriter, r *http.Request) {
 		asset, err := os.ReadFile("htmx-sse.js")
 		if err != nil {
-			w.WriteHeader(http.StatusNotFound)
-			return
+			log.Fatal(err)
 		}
 
 		w.Header().Add("Content-Type", "text/javascript")
@@ -215,8 +154,7 @@ func main() {
 	http.HandleFunc("GET /htmx.js/{$}", func(w http.ResponseWriter, r *http.Request) {
 		asset, err := os.ReadFile("htmx.js")
 		if err != nil {
-			w.WriteHeader(http.StatusNotFound)
-			return
+			log.Fatal(err)
 		}
 
 		w.Header().Add("Content-Type", "text/javascript")
@@ -225,121 +163,22 @@ func main() {
 		}
 	})
 
-	http.HandleFunc("POST /login/{$}", func(w http.ResponseWriter, r *http.Request) {
-		email := r.FormValue("email")
-		log.Printf("login: %s try to login", email)
-
-		params := &verify.CreateVerificationParams{}
-		params.SetTo(email)
-		params.SetChannel("email")
-
-		client := twilio.NewRestClient()
-		_, err := client.VerifyV2.CreateVerification(twilioServiceId, params)
-		if err != nil {
-			log.Panic(err)
-		}
-
-		w.Header().Add("HX-Redirect", fmt.Sprintf("/verify/?email=%s", email))
-	})
-
-	http.HandleFunc("GET /verify/{$}", func(w http.ResponseWriter, r *http.Request) {
-		tmpl, err := template.ParseFiles("./template/layout.html", "./template/verify.html")
+	http.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		tmpl, err := template.ParseFiles("./template/layout.html", "./template/index.html")
 		if err != nil {
 			log.Fatal(err)
-		}
-
-		query := r.URL.Query()
-
-		err = tmpl.Execute(w, query.Get("email"))
-		if err != nil {
-			log.Panic(err)
-		}
-	})
-
-	http.HandleFunc("POST /verify/{$}", func(w http.ResponseWriter, r *http.Request) {
-		query := r.URL.Query()
-		code := r.FormValue("code")
-		email := query.Get("email")
-		log.Printf("verify: %s", email)
-
-		params := &verify.CreateVerificationCheckParams{}
-		params.SetTo(email)
-		params.SetCode(code)
-
-		client := twilio.NewRestClient()
-		resp, err := client.VerifyV2.CreateVerificationCheck(twilioServiceId, params)
-		if err != nil {
-			log.Panic(err)
-		}
-
-		log.Println(*resp.Status)
-		if *resp.Status != "approved" {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-
-		defaultName := strings.Split(email, "@")[0]
-
-		db, err := sql.Open("sqlite3", "./db")
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer db.Close()
-
-		if _, err := db.Exec("INSERT INTO users (email, name, prompt, sources, feed) VALUES (?, ?, ?, ?, ?) ON CONFLICT(email) DO NOTHING", email, defaultName, `台灣今天有什麼重大新聞?
-今天出門該怎麼穿？`, "報導者,公視新聞,ETtoday,自由時報", ""); err != nil {
-			log.Panic(err)
-		}
-
-		bytes := make([]byte, 32)
-		_, err = rand.Read(bytes)
-		if err != nil {
-			log.Panic(err)
-		}
-
-		id := base64.URLEncoding.EncodeToString(bytes)
-
-		if _, err := db.Exec("INSERT INTO sessions (id, email) VALUES (?, ?)", id, email); err != nil {
-			log.Panic(err)
-		}
-
-		cookie := http.Cookie{Name: "session", Value: id, Path: "/"}
-		http.SetCookie(w, &cookie)
-	})
-
-	http.HandleFunc("GET /setting/{$}", func(w http.ResponseWriter, r *http.Request) {
-		tmpl, err := template.ParseFiles("./template/layout.html", "./template/setting.html")
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		email, err := getLoggedInUserEmail(r)
-		if err != nil {
-			w.WriteHeader(http.StatusUnauthorized)
-			log.Println(err)
-			return
-		}
-
-		db := openDB()
-		name := ""
-		subscribe := false
-		if err := db.QueryRow("SELECT name, subscribe FROM users WHERE email = ?", email).Scan(&name, &subscribe); err == sql.ErrNoRows {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		} else if err != nil {
-			log.Println(err)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
 		}
 
 		m := map[string]any{
-			"name":      name,
-			"subscribe": subscribe,
-			"email":     email,
+			"sources": sources,
 		}
 
-		err = tmpl.Execute(w, m)
-		if err != nil {
+		if user, err := getSessionUser(r); err == nil {
+			log.Printf("visit: %s\n", user.Email)
+			m["user"] = user
+		}
+
+		if err = tmpl.Execute(w, m); err != nil {
 			log.Panic(err)
 		}
 	})
@@ -361,7 +200,6 @@ func main() {
 
 			userSources = append(userSources, source.Name)
 		}
-
 		sourcesStr := strings.Join(userSources, ",")
 
 		m := map[string]string{
@@ -369,17 +207,15 @@ func main() {
 			"sources": sourcesStr,
 		}
 
-		err = tmpl.Execute(w, m)
-		if err != nil {
+		if err = tmpl.Execute(w, m); err != nil {
 			log.Panic(err)
 		}
 	})
 
 	http.HandleFunc("GET /search/{$}", func(w http.ResponseWriter, r *http.Request) {
-		email, err := getLoggedInUserEmail(r)
+		user, err := getSessionUser(r)
 		if err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
-			log.Println(err)
 			return
 		}
 
@@ -389,7 +225,8 @@ func main() {
 		userSources := strings.Split(sourcesStr, ",")
 
 		db := openDB()
-		if _, err := db.Exec("UPDATE users SET sources = ?, prompt = ? WHERE email = ?", sourcesStr, prompt, email); err != nil {
+		defer db.Close()
+		if _, err := db.Exec("UPDATE users SET sources = ?, prompt = ? WHERE email = ?", sourcesStr, prompt, user.Email); err != nil {
 			log.Panic(err)
 		}
 
@@ -464,11 +301,11 @@ func main() {
 			if errors.Is(err, io.EOF) {
 				fmt.Fprintf(w, "event: end\ndata: \n\n")
 
-				if _, err := db.Exec("UPDATE users SET feed = ? WHERE email = ?", msg, email); err != nil {
+				if _, err := db.Exec("UPDATE users SET feed = ? WHERE email = ?", msg, user.Email); err != nil {
 					log.Panic(err)
 				}
 				log.Println("---")
-				log.Println(email)
+				log.Println(user.Email)
 				log.Println(prompt)
 				log.Println(msg)
 				log.Println("---")
@@ -485,11 +322,137 @@ func main() {
 		}
 	})
 
+	http.HandleFunc("GET /help/{$}", func(w http.ResponseWriter, r *http.Request) {
+		tmpl, err := template.ParseFiles("./template/layout.html", "./template/help.html")
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		user, err := getSessionUser(r)
+
+		if err = tmpl.Execute(w, map[string]any{"user": user}); err != nil {
+			log.Panic(err)
+		}
+	})
+
+	http.HandleFunc("GET /login/{$}", func(w http.ResponseWriter, r *http.Request) {
+		tmpl, err := template.ParseFiles("./template/layout.html", "./template/login.html")
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		user, err := getSessionUser(r)
+		if err == nil {
+			w.Header().Add("location", "/")
+			w.WriteHeader(http.StatusFound)
+			return
+		}
+
+		if err = tmpl.Execute(w, map[string]any{"user": user}); err != nil {
+			log.Panic(err)
+		}
+	})
+
+	http.HandleFunc("POST /login/{$}", func(w http.ResponseWriter, r *http.Request) {
+		email := r.FormValue("email")
+
+		params := &verify.CreateVerificationParams{}
+		params.SetTo(email)
+		params.SetChannel("email")
+
+		client := twilio.NewRestClient()
+		if _, err := client.VerifyV2.CreateVerification(twilioServiceId, params); err != nil {
+			log.Panic(err)
+		}
+
+		w.Header().Add("HX-Redirect", fmt.Sprintf("/verify/?email=%s", email))
+	})
+
+	http.HandleFunc("GET /verify/{$}", func(w http.ResponseWriter, r *http.Request) {
+		if _, err := getSessionUser(r); err == nil {
+			w.Header().Add("location", "/")
+			w.WriteHeader(http.StatusFound)
+			return
+		}
+
+		tmpl, err := template.ParseFiles("./template/layout.html", "./template/verify.html")
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		query := r.URL.Query()
+		m := map[string]any{
+			"email": query.Get("email"),
+		}
+
+		if err = tmpl.Execute(w, m); err != nil {
+			log.Panic(err)
+		}
+	})
+
+	http.HandleFunc("POST /verify/{$}", func(w http.ResponseWriter, r *http.Request) {
+		email := r.URL.Query().Get("email")
+
+		params := &verify.CreateVerificationCheckParams{}
+		params.SetTo(email)
+		params.SetCode(r.FormValue("code"))
+
+		client := twilio.NewRestClient()
+		resp, err := client.VerifyV2.CreateVerificationCheck(twilioServiceId, params)
+		if err != nil {
+			log.Panic(err)
+		}
+
+		if *resp.Status != "approved" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		db := openDB()
+		defer db.Close()
+
+		defaultName := strings.Split(email, "@")[0]
+		if _, err := db.Exec("INSERT INTO users (email, name, prompt, sources, feed) VALUES (?, ?, ?, ?, ?) ON CONFLICT(email) DO NOTHING", email, defaultName, `台灣今天有什麼重大新聞?
+今天出門該怎麼穿？`, "報導者,公視新聞,ETtoday,自由時報", ""); err != nil {
+			log.Panic(err)
+		}
+
+		bytes := make([]byte, 32)
+		if _, err = rand.Read(bytes); err != nil {
+			log.Panic(err)
+		}
+		id := base64.URLEncoding.EncodeToString(bytes)
+
+		if _, err := db.Exec("INSERT INTO sessions (id, email) VALUES (?, ?)", id, email); err != nil {
+			log.Panic(err)
+		}
+
+		cookie := http.Cookie{Name: "session", Value: id, Path: "/"}
+		http.SetCookie(w, &cookie)
+	})
+
+	http.HandleFunc("GET /setting/{$}", func(w http.ResponseWriter, r *http.Request) {
+		tmpl, err := template.ParseFiles("./template/layout.html", "./template/setting.html")
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		user, err := getSessionUser(r)
+		if err != nil {
+			w.Header().Add("location", "/")
+			w.WriteHeader(http.StatusFound)
+			return
+		}
+
+		if err = tmpl.Execute(w, map[string]any{"user": user}); err != nil {
+			log.Panic(err)
+		}
+	})
+
 	http.HandleFunc("PUT /setting/{$}", func(w http.ResponseWriter, r *http.Request) {
-		email, err := getLoggedInUserEmail(r)
+		user, err := getSessionUser(r)
 		if err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
-			log.Println(err)
 			return
 		}
 
@@ -505,21 +468,8 @@ func main() {
 		}
 
 		db := openDB()
-		if _, err := db.Exec("UPDATE users SET name = ?, subscribe  = ? WHERE email = ?", name, subscribe, email); err != nil {
-			log.Panic(err)
-		}
-
-		w.Header().Add("HX-Redirect", "/")
-	})
-
-	http.HandleFunc("GET /help/{$}", func(w http.ResponseWriter, r *http.Request) {
-		tmpl, err := template.ParseFiles("./template/layout.html", "./template/help.html")
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		err = tmpl.Execute(w, nil)
-		if err != nil {
+		defer db.Close()
+		if _, err := db.Exec("UPDATE users SET name = ?, subscribe  = ? WHERE email = ?", name, subscribe, user.Email); err != nil {
 			log.Panic(err)
 		}
 	})
@@ -542,19 +492,25 @@ var (
 	ErrUserNotLoggedIn = errors.New("user not logged in")
 )
 
-func getLoggedInUserEmail(r *http.Request) (string, error) {
+func getSessionUser(r *http.Request) (*User, error) {
+	cookie, err := r.Cookie("session")
+	if err != nil {
+		return nil, ErrUserNotLoggedIn
+	}
+
 	db := openDB()
 	defer db.Close()
 
-	cookie, err := r.Cookie("session")
-	if err != nil {
-		return "", ErrUserNotLoggedIn
+	user := User{}
+	sourcesStr := ""
+	if err := db.QueryRow("SELECT sessions.email, users.name, users.prompt, users.sources, users.feed, users.template, users.subscribe FROM sessions JOIN users ON sessions.email = users.email WHERE sessions.id = ?", cookie.Value).Scan(&user.Email, &user.Name, &user.Prompt, &sourcesStr, &user.Feed, &user.Template, &user.Subscribe); err != nil {
+		return nil, ErrUserNotLoggedIn
 	}
 
-	email := ""
-	if err := db.QueryRow("SELECT email FROM sessions WHERE id = ?", cookie.Value).Scan(&email); err != nil {
-		return "", ErrUserNotLoggedIn
+	user.Sources = map[string]bool{}
+	for _, s := range strings.Split(sourcesStr, ",") {
+		user.Sources[s] = true
 	}
 
-	return email, nil
+	return &user, nil
 }

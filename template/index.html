@@ -1,31 +1,17 @@
-{{define "header"}}
-<a class="text-red-50" href="/"> 台島 </a>
-<nav>
-  <a href="/help/">說明</a>
-  <a href="mailto:you@hsuyuting.com">意見回饋</a>
-  {{if .user}}
-  <a href="/setting/">{{.user.Name}}</a>
-  {{else}}
-  <a href="/login/">登入</a>
-  {{end}}
-</nav>
-{{end}}
-
 {{define "main"}}
 {{if .user}}
-<form style="padding-top:16px;display:flex;flex-direction:column;gap:8px" hx-post="/template/search/"
-  hx-target="#search" hx-disabled-elt="textarea,input[type='checkbox'],input[type='submit']">
-  <div style="display:flex;gap:8px;width:100%;">
-    <label style="display:flex;flex-grow:1">
-      <input style="flex-grow:1" type="text" required name="prompt" value="{{.user.Prompt}}" placeholder="搜尋台灣的最新動態" />
-    </label>
-    <input style="border-radius:8px;border:0;background:#c5c9e6;" type="submit" value="搜尋" />
+<form hx-post="/template/search/" hx-target="#search"
+  hx-disabled-elt="textarea,input[type='checkbox'],input[type='submit']">
+  <div class="flex gap-2">
+    <input class="flex-1 p-2 rounded" type="text" required name="prompt" value="{{.user.Prompt}}"
+      placeholder="搜尋台灣的最新動態" />
+    <input class="px-6 font-bold py-2 rounded bg-blue-100 cursor-pointer" type="submit" value="搜尋" />
   </div>
-  <details>
+  <details class="pt-2">
     <summary>選擇資訊來源</summary>
-    <div style="display:flex;flex-wrap:wrap;">
+    <div class="flex gap-x-4 gap-y-2 flex-wrap">
       {{range .sources}}
-      <label style="flex-basis:25%;">
+      <label class="flex-none">
         <input type="checkbox" id="{{.Name}}" name="{{.Name}}" {{if index $.user.Sources .Name}}checked{{end}} />
         <a href="{{.Site}}" target="_blank"> {{.Name}} </a>
       </label>
@@ -34,14 +20,18 @@
   </details>
 </form>
 
+<hr class="my-4">
+
 <div id="search">
   {{.user.Feed}}
 </div>
 
 {{else}}
-<h1 style="text-align:center">搜尋台灣的最新動態</h1>
-<div style="text-align:center">
-  <a href="/login/"> 開始試用 </a>
+<div class="flex flex-col gap-4">
+  <h1 class="text-center font-bold text-2xl">搜尋台灣的最新動態</h1>
+  <div class="text-center">
+    <a class="px-6 font-bold py-2 rounded bg-blue-100 cursor-pointer" href="/login/"> 開始試用 </a>
+  </div>
 </div>
 {{end}}
 {{end}}
