@@ -1,22 +1,25 @@
-{{define "header"}}
-<a href="/"> 台島 </a>
-{{end}}
-
 {{define "main"}}
-<h2>帳號</h2>
-<form style="display: flex; flex-direction: column; gap: 8px;" hx-put="/setting/">
-  <label>
-    Email
-    <input type="email" disabled value={{.email}} />
-  </label>
-  <label>
-    名稱
-    <input type="text" name="name" required value="{{.name}}" />
-  </label>
-  <label>
-    訂閱<strong>台島</strong>更新電子報
-    <input type="checkbox" name="subscribe" {{if .subscribe }}checked{{end}} />
-  </label>
-  <input type="submit" />
+<h2 class="font-bold text-2xl">設定</h2>
+<hr>
+<form class="flex flex-col gap-8" hx-put="/setting/" hx-swap="none" hx-disabled-elt="this">
+  <div class="grid grid-cols-2 gap-2 pt-4">
+    <label>
+      <strong>Email</strong>
+    </label>
+    <input class="p-2 rounded-md bg-slate-50" type="email" disabled value={{.user.Email}} />
+    <label>
+      <strong>
+        名稱
+      </strong>
+    </label>
+    <input class="p-2 rounded-md bg-white" type="text" name="name" required value="{{.user.Name}}" />
+    <label>
+      <strong>訂閱台島更新電子報</strong>
+    </label>
+    <input type="checkbox" name="subscribe" {{if .user.Subscribe }}checked{{end}} />
+  </div>
+  <div>
+    <input class="px-6 font-bold py-2 rounded bg-blue-100 cursor-pointer" type="submit" />
+  </div>
 </form>
 {{end}}
