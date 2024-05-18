@@ -186,6 +186,45 @@ func main() {
 		}
 	})
 
+	http.HandleFunc("GET /styles.css/{$}", func(w http.ResponseWriter, r *http.Request) {
+		asset, err := os.ReadFile("assets/styles.css")
+		if err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		w.Header().Add("Content-Type", "text/css")
+		if _, err := w.Write(asset); err != nil {
+			log.Panic(err)
+		}
+	})
+
+	http.HandleFunc("GET /htmx-sse.js/{$}", func(w http.ResponseWriter, r *http.Request) {
+		asset, err := os.ReadFile("htmx-sse.js")
+		if err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		w.Header().Add("Content-Type", "text/javascript")
+		if _, err := w.Write(asset); err != nil {
+			log.Panic(err)
+		}
+	})
+
+	http.HandleFunc("GET /htmx.js/{$}", func(w http.ResponseWriter, r *http.Request) {
+		asset, err := os.ReadFile("htmx.js")
+		if err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		w.Header().Add("Content-Type", "text/javascript")
+		if _, err := w.Write(asset); err != nil {
+			log.Panic(err)
+		}
+	})
+
 	http.HandleFunc("POST /login/{$}", func(w http.ResponseWriter, r *http.Request) {
 		email := r.FormValue("email")
 		log.Printf("login: %s try to login", email)

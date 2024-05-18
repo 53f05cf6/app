@@ -3,11 +3,12 @@
 <html lang="zh-Hans-TW">
 
 <head>
+  <title>台島</title>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://unpkg.com/htmx.org@2.0.0-beta3/dist/htmx.js"></script>
-  <script src="https://unpkg.com/htmx-ext-sse@2.1.0/sse.js"></script>
-  <title>台島</title>
+  <script src="/htmx.js/"></script>
+  <script src="/htmx-sse.js/"></script>
+  <link href="/styles.css/" rel="stylesheet" />
 </head>
 
 <body>
@@ -18,53 +19,5 @@
     {{ template "main" . }}
   </main>
 </body>
-
-<style>
-  main {
-    max-width: 640px;
-    margin-left: auto;
-    margin-right: auto;
-  }
-
-  header {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    max-width: 640px;
-    margin-left: auto;
-    margin-right: auto;
-  }
-
-  header>a {
-    font-size: 2em;
-    font-weight: bold;
-    color: black;
-  }
-
-  a {
-    text-decoration: none;
-    color: blue;
-  }
-
-  img {
-    width: 100%;
-  }
-
-  nav {
-    display: flex;
-    gap: 8px;
-  }
-
-  textarea {
-    width: 100%;
-  }
-
-  input[type='text'] {
-    border-width: 0;
-    padding: 8px;
-    border-radius: 8px;
-    background-color: #eeeeee;
-  }
-</style>
 
 </html>
