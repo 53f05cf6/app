@@ -1,0 +1,99 @@
+<!doctype html>
+<html>
+
+<head>
+  <script type="module" src="main.js"></script>
+  <style>
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      padding: 0;
+      margin: 0;
+      overflow: hidden;
+    }
+
+    #game {
+      width: 100%;
+      height: 100%;
+      display: block;
+      font-size: 0;
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="game"> </canvas>
+  <h1>test</h1>
+</body>
+<script type="module">
+
+  import {
+    ArcRotateCamera,
+    CreateBox,
+    Engine,
+    HemisphericLight,
+    Scene,
+    Vector3,
+  } from "@babylonjs/core";
+  import {GridMaterial} from "@babylonjs/materials";
+
+  const canvas = document.getElementById("game");
+
+  if (!(canvas instanceof HTMLCanvasElement)) {
+    throw new Error("Canvas element not found");
+  }
+
+  const engine = new Engine(canvas);
+  const scene = new Scene(engine);
+
+  const material = new GridMaterial("grid", scene);
+  const box = CreateBox(
+    "box",
+    {
+      size: 8,
+      width: 8,
+      height: 0.5,
+    },
+    scene,
+  );
+  box.material = material;
+
+  const hero = CreateBox(
+    "box",
+    {
+      size: 1,
+      width: 1,
+      height: 1,
+    },
+    scene,
+  );
+  box.material = material;
+
+  const c3Offset = new Vector3(-2, 1, -2);
+
+  hero.position = box.position.add(c3Offset);
+
+  const camera = new ArcRotateCamera(
+    "camera",
+    0,
+    Math.PI / 3,
+    15,
+    Vector3.Zero(),
+    scene,
+  );
+  camera.lowerBetaLimit = Math.PI / 3;
+  camera.upperBetaLimit = Math.PI / 3;
+  camera.attachControl(canvas, true);
+  camera.setTarget(box);
+
+  const light = new HemisphericLight("light1", new Vector3(0, 2, 0), scene);
+  light.intensity = 0.7;
+
+  // Render every frame
+  engine.runRenderLoop(() => {
+    scene.render();
+  });
+</script>
+
+</html>

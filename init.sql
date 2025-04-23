@@ -1,15 +1,10 @@
 CREATE TABLE users(
-	email VARCHAR(320) NOT NULL PRIMARY KEY,
-	name VARCHAR(64),
-	prompt TEXT,
-	sources TEXT,
-	feed TEXT,
-	template TEXT,
-	subscribe INTEGER
+	username VARCHAR(32) NOT NULL PRIMARY KEY,
+	email TEXT NOT NULL UNIQUE,
 );
 
-CREATE TABLE sessions(
+CREATE TABLE user_sessions(
+	username REFERENCES users,
 	id VARCHAR(256),
-	email VARCHAR(320),
 	created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
