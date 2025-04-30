@@ -1,0 +1,39 @@
+{{ define "body" }}
+  <main>
+    <h1>註冊成為台島居民</h1>
+    <div class="flex-v gap-1">
+      <form class="flex-v gap-1" hx-target="#error" hx-post="/sign-up/">
+        <p id="error"></p>
+        <div class="input-group">
+          <label for="email">Email address</label>
+          <input
+            id="email"
+            autocomplete="email"
+            name="email"
+            type="email"
+            required
+            placeholder="you@example.com"
+          />
+        </div>
+        <div class="input-group">
+          <label for="username">Username</label>
+          <input
+            id="username"
+            autocomplete="username"
+            name="username"
+            required
+            pattern="[a-zA-Z0-9\-._]{3,32}"
+            placeholder="username"
+          />
+        </div>
+
+        <input class="button-primary" value="確認" type="submit" />
+      </form>
+      <p class="text-secondary text-center">
+        已經註冊過了嗎?
+        <a href="/log-in/" class="text-link">前往登入</a>
+      </p>
+    </div>
+  </main>
+{{ end }}
+

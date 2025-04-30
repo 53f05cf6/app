@@ -1,9 +1,16 @@
 CREATE TABLE users(
 	username VARCHAR(32) NOT NULL PRIMARY KEY,
-	email TEXT NOT NULL UNIQUE,
+	email TEXT NOT NULL UNIQUE
 );
 
-CREATE TABLE user_sessions(
+CREATE TABLE user_sign_up_sessions(
+	username VARCHAR(32) NOT NULL PRIMARY KEY,
+	email TEXT NOT NULL UNIQUE
+	 VARCHAR(256),
+	created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE user_log_in_sessions(
 	username REFERENCES users,
 	id VARCHAR(256),
 	created_at TEXT DEFAULT CURRENT_TIMESTAMP

@@ -1,26 +1,4 @@
-<!doctype html>
-<html>
-
-<head>
-  <script type="module" src="main.js"></script>
-  <style>
-    html,
-    body {
-      width: 100%;
-      height: 100%;
-      padding: 0;
-      margin: 0;
-      overflow: hidden;
-    }
-
-    #game {
-      width: 100%;
-      height: 100%;
-      display: block;
-      font-size: 0;
-    }
-  </style>
-</head>
+{{ define "body" }}
 
 <body>
   <canvas id="game"> </canvas>
@@ -95,5 +73,4 @@
     scene.render();
   });
 </script>
-
-</html>
+{{ end }}
