@@ -12,8 +12,8 @@ import (
 	"strings"
 
 	"github.com/Masterminds/sprig/v3"
-	"github.com/tdewolff/minify/v2/html"
 	"github.com/tdewolff/minify/v2"
+	"github.com/tdewolff/minify/v2/html"
 	_ "modernc.org/sqlite"
 )
 
@@ -39,6 +39,14 @@ func main() {
 		port = v
 	}
 
+	var err error
+	if db, err = sql.Open("sqlite", "./db"); err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+	db.Exec("PRAGMA foreign_keys = ON")
+	db.Exec("PRAGMA journal_mode = WAL")
+
 	tmpl = template.Must(template.New("base").Funcs(sprig.FuncMap()).ParseGlob("./template/*.tmpl"))
 	files, err := os.ReadDir("./page")
 	if err != nil {
@@ -53,6 +61,8 @@ func main() {
 
 	minifier = minify.New()
 	minifier.AddFunc("text/html", html.Minify)
+
+	// TTL for user sign-up token 5m
 
 	http.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		executePage(w, r, "index.tmpl", nil)
@@ -78,6 +88,55 @@ func main() {
 		}
 
 		executePage(w, r, "sign-up.tmpl", nil)
+	})
+
+	http.HandleFunc("POST /sign-up-by-email/{$}", func(w http.ResponseWriter, r *http.Request) {
+		// check if user is created
+
+		username := r.FormValue("username")
+		email := r.FormValue("email")
+		rows, err := db.Query(`
+			SELECT username, email FROM users
+			WHERE username = ? OR email = ?
+			`, username, email)
+		if err != nil {
+			log.Panicln(err)
+			w.WriteHeader(http.StatusInternalServerError)
+
+		}
+		defer rows.Close()
+
+		conflictFields := []string{}
+		for rows.Next() {
+			var u, e string
+			rows.Scan(&u, &e)
+			if u == username {
+				conflictFields = append(conflictFields, "username")
+			}
+			if e == email {
+				conflictFields = append(conflictFields, "email")
+			}
+		}
+		if len(conflictFields) != 0 {
+			w.WriteHeader(http.StatusConflict)
+			w.Write([]byte(strings.Join(conflictFields, ",")))
+			return
+		}
+
+		// create a sign-up token and saved it in db
+		// mail the token to the email
+		// redirect the user the verify-email page
+	})
+
+	http.HandleFunc("GET /verify-email/{$}", func(w http.ResponseWriter, r *http.Request) {
+		executePage(w, r, "verify-email.tmpl", nil)
+	})
+
+	http.HandleFunc("POST /verify-email/{$}", func(w http.ResponseWriter, r *http.Request) {
+		// rate limit to prevent brute force attack
+		// check the token from user input
+		// create user account
+		// redirect the user to the main page
 	})
 
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("assets"))))
@@ -136,7 +195,7 @@ func getSessionUser(r *http.Request) (*User, bool, error) {
 		email
 		username,
 		FROM users
-		WHERE user_sessions.id = ? 
+		WHERE user_log_in_sessions.id = ? 
 		LIMIT 1`, cookie.Value)
 
 	if err != nil {

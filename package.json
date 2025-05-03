@@ -1,0 +1,11 @@
+{
+  "scripts": {
+    "prettier-watch": "onchange \"**/*\" -- prettier --write --ignore-unknown {{changed}}"
+  },
+  "devDependencies": {
+    "onchange": "^7.1.0",
+    "prettier": "^3.5.3",
+    "prettier-plugin-css-order": "^2.1.2",
+    "prettier-plugin-go-template": "^0.0.15"
+  }
+}

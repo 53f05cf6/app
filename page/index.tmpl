@@ -1,13 +1,16 @@
 {{ define "body" }}
-<body>
   <header>
-    <a href="/sign-up/"> 註冊</a>
-    <a href="/log-in/"> 登入</a>
+    <span></span>
+    <div class="flex-h">
+      <a class="button button-soft button-sm" href="/sign-up/"> 註冊</a>
+      <a class="button button-soft button-sm" href="/log-in/"> 登入</a>
+    </div>
   </header>
-  <h1>
-    台島
-  </h1>
-  <a href="/earthquake-master/">地震達人</a>
-  <a href="/lau-lang/">落人</a>
-</body>
+  <main>
+    <h1>台島</h1>
+    <section class="flex-v gap-025">
+      <a class="button button-soft" href="/earthquake-master/">地震達人</a>
+      <a class="button button-soft" href="/lau-lang/">落人</a>
+    </section>
+  </main>
 {{ end }}

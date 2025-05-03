@@ -5,8 +5,8 @@ CREATE TABLE users(
 
 CREATE TABLE user_sign_up_sessions(
 	username VARCHAR(32) NOT NULL PRIMARY KEY,
-	email TEXT NOT NULL UNIQUE
-	 VARCHAR(256),
+	email TEXT NOT NULL UNIQUE,
+	secret TEXT NOT NULL,
 	created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
