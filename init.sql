@@ -3,10 +3,10 @@ CREATE TABLE users(
 	email TEXT NOT NULL UNIQUE
 );
 
-CREATE TABLE user_sign_up_sessions(
+CREATE TABLE user_sign_up_email_tokens(
 	username VARCHAR(32) NOT NULL PRIMARY KEY,
 	email TEXT NOT NULL UNIQUE,
-	secret TEXT NOT NULL,
+	token TEXT NOT NULL,
 	created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 

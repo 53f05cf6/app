@@ -1,17 +1,22 @@
 package main
 
 import (
+	"bytes"
 	"compress/gzip"
 	"database/sql"
 	"fmt"
 	"html/template"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"strings"
 
 	"github.com/Masterminds/sprig/v3"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ses"
+	"github.com/aws/aws-sdk-go-v2/service/ses/types"
 	"github.com/tdewolff/minify/v2"
 	"github.com/tdewolff/minify/v2/html"
 	_ "modernc.org/sqlite"
@@ -79,8 +84,9 @@ func main() {
 
 	http.HandleFunc("GET /sign-up/{$}", func(w http.ResponseWriter, r *http.Request) {
 		if _, ok, err := getSessionUser(r); err != nil {
+			log.Println(err)
 			w.WriteHeader(http.StatusInternalServerError)
-			log.Panic(err)
+			return
 		} else if ok {
 			w.Header().Add("location", "/")
 			w.WriteHeader(http.StatusFound)
@@ -91,18 +97,18 @@ func main() {
 	})
 
 	http.HandleFunc("POST /sign-up-by-email/{$}", func(w http.ResponseWriter, r *http.Request) {
-		// check if user is created
-
 		username := r.FormValue("username")
 		email := r.FormValue("email")
+		// add validation
+
 		rows, err := db.Query(`
 			SELECT username, email FROM users
 			WHERE username = ? OR email = ?
 			`, username, email)
 		if err != nil {
-			log.Panicln(err)
 			w.WriteHeader(http.StatusInternalServerError)
-
+			log.Println(err)
+			return
 		}
 		defer rows.Close()
 
@@ -123,9 +129,49 @@ func main() {
 			return
 		}
 
-		// create a sign-up token and saved it in db
-		// mail the token to the email
-		// redirect the user the verify-email page
+		sixDigits := rand.Intn(900000) + 100000
+		token := fmt.Sprintf("%d", sixDigits)
+		if _, err := db.Exec("INSERT INTO user_sign_up_email_tokens (username, email, token) VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET token = ?", username, email, token, token); err != nil {
+			log.Println(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		ctx := r.Context()
+		cfg, err := config.LoadDefaultConfig(ctx)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			log.Println(err)
+		}
+
+		from := "台島 <no-reply@xn--kprw3s.tw>"
+		title := "信箱驗證碼"
+		var htmlBuffer bytes.Buffer
+		err = tmpl.ExecuteTemplate(&htmlBuffer, "sign-up-email", token)
+		if err != nil {
+			log.Panic(err)
+		}
+		body := htmlBuffer.String()
+
+		client := ses.NewFromConfig(cfg)
+		client.SendEmail(ctx, &ses.SendEmailInput{
+			Destination: &types.Destination{
+				ToAddresses: []string{email},
+			},
+			Message: &types.Message{
+				Subject: &types.Content{
+					Data: &title,
+				},
+				Body: &types.Body{
+					Html: &types.Content{
+						Data: &body,
+					},
+				},
+			},
+			Source: &from,
+		})
+
+		w.Header().Add("HX-Redirect", "/verify-email/")
+		w.WriteHeader(http.StatusSeeOther)
 	})
 
 	http.HandleFunc("GET /verify-email/{$}", func(w http.ResponseWriter, r *http.Request) {
@@ -134,7 +180,9 @@ func main() {
 
 	http.HandleFunc("POST /verify-email/{$}", func(w http.ResponseWriter, r *http.Request) {
 		// rate limit to prevent brute force attack
+
 		// check the token from user input
+
 		// create user account
 		// redirect the user to the main page
 	})
