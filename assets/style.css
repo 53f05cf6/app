@@ -303,7 +303,7 @@ input[type="submit"] {
   --radius: 0.5rem;
 }
 
-.top-right {
+.invisible .top-right {
   position: absolute;
   top: 0.5rem;
   right: 0.5rem;
