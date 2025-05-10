@@ -12,6 +12,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -37,10 +38,12 @@ var (
 
 func main() {
 	if v, ok := os.LookupEnv("LOG_FILE"); ok {
-		logFile, err := os.OpenFile(v, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
+		logFile, err := os.OpenFile(v, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0600)
 		if err != nil {
 			log.Fatal(err)
 		}
+		defer logFile.Close()
+
 		log.SetOutput(logFile)
 	}
 
@@ -115,6 +118,7 @@ func main() {
 	})
 
 	http.HandleFunc("POST /sign-up-by-email/{$}", func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
 		username := r.FormValue("username")
 		email := r.FormValue("email")
 		// add validation
@@ -188,7 +192,7 @@ func main() {
 			Source: &from,
 		})
 
-		w.Header().Add("HX-Redirect", fmt.Sprintf("/settings/?username=%s&email=%s", username, email))
+		w.Header().Add("HX-Redirect", url.QueryEscape(fmt.Sprintf("/settings/?username=%s&email=%s", username, email)))
 		w.WriteHeader(http.StatusSeeOther)
 	})
 
@@ -207,16 +211,18 @@ func main() {
 	})
 
 	http.HandleFunc("POST /verify-email/{$}", rateLimit(func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
 		username := r.FormValue("username")
 		email := r.FormValue("email")
 		token := r.FormValue("token")
 		row := db.QueryRow(`
-			SELECT * FROM user_sign_up_email_tokens
+			SELECT COUNT() FROM user_sign_up_email_tokens
 			WHERE username = ?
 			AND email = ?
 			AND token = ?
 		`, username, email, token)
-		if row.Scan() == sql.ErrNoRows {
+		var count int
+		if row.Scan(&count) == sql.ErrNoRows {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
@@ -242,7 +248,13 @@ func main() {
 			log.Panic(err)
 		}
 
-		cookie := http.Cookie{Name: "session", Value: token, Path: "/", Expires: time.Now().Add(7 * 24 * time.Hour)}
+		cookie := http.Cookie{
+			Name:  "session",
+			Value: sessionId,
+			Path:  "/", Expires: time.Now().Add(7 * 24 * time.Hour),
+			HttpOnly: true,
+			Secure:   true,
+		}
 
 		http.SetCookie(w, &cookie)
 		w.Header().Add("HX-Redirect", "/")
@@ -302,9 +314,10 @@ func getSessionUser(r *http.Request) (*User, bool, error) {
 	var user *User
 	rows, err := db.Query(`
 		SELECT
-		email
-		username,
+		email,
+		users.username
 		FROM users
+		LEFT JOIN user_log_in_sessions ON users.username = user_log_in_sessions.username
 		WHERE user_log_in_sessions.id = ? 
 		LIMIT 1`, cookie.Value)
 

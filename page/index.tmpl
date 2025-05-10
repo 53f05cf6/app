@@ -1,16 +1,22 @@
 {{ define "body" }}
-  <header>
-    <span></span>
-    <div class="flex-h">
-      <a class="button button-soft button-sm" href="/sign-up/"> 註冊</a>
-      <a class="button button-soft button-sm" href="/log-in/"> 登入</a>
-    </div>
-  </header>
   <main>
-    <h1>台島</h1>
+    <section class="flex-v gap-05 items-center">
+      <img
+        style="width:64px;margin-bottom:1rem"
+        src="/static/tw-outline.svg/"
+      />
+      <h1>台島</h1>
+      <p>一個台灣人的地盤</p>
+    </section>
+
+    <section class="flex-h gap-05">
+      <a class="button button-primary button-sm" href="/log-in/"> 登入</a>
+      <a class="button button-secondary button-sm" href="/sign-up/"> 註冊</a>
+    </section>
     <section class="flex-v gap-025">
-      <a class="button button-soft" href="/earthquake-master/">地震達人</a>
-      <a class="button button-soft" href="/lau-lang/">落人</a>
+      <a class="button button-soft" href="/earthquake-master/"
+        >地震達人(開發中)</a
+      >
     </section>
   </main>
 {{ end }}

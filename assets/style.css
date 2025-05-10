@@ -313,6 +313,14 @@ input[type="submit"] {
   position: relative;
 }
 
+.justify-center {
+  justify-center: center;
+}
+
+.items-center {
+  align-items: center;
+}
+
 .text-center {
   text-align: center;
 }
