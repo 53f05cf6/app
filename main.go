@@ -28,8 +28,7 @@ import (
 )
 
 var (
-	port = "8080"
-
+	port     = "8080"
 	db       *sql.DB
 	tmpl     *template.Template
 	pageTmpl map[string]*template.Template
@@ -67,7 +66,21 @@ func main() {
 			<-ticker.C
 			cutoff := time.Now().Add(-7 * 24 * time.Hour).Unix()
 			if _, err := db.Exec("DELETE FROM user_log_in_sessions WHERE created_at < ?", cutoff); err != nil {
-				log.Printf("deleting user sessions failed: %v\n", err)
+				log.Printf("delete user log in sessions failed: %v\n", err)
+				continue
+			}
+		}
+	}()
+
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+
+		for {
+			<-ticker.C
+			cutoff := time.Now().Add(-10 * time.Minute).Unix()
+			if _, err := db.Exec("DELETE FROM user_sign_up_email_tokens WHERE created_at < ?", cutoff); err != nil {
+				log.Printf("delete user sign up tokens failed: %v\n", err)
 				continue
 			}
 		}
@@ -82,13 +95,11 @@ func main() {
 	pageTmpl = map[string]*template.Template{}
 	for _, file := range files {
 		filename := file.Name()
-		pageTmpl[filename] = template.Must(template.Must(tmpl.Clone()).ParseFiles(fmt.Sprintf("./page/%s", filename)))
+		pageTmpl[filename] = template.Must(template.Must(tmpl.Clone()).ParseFiles("./page/" + filename))
 	}
 
 	minifier = minify.New()
 	minifier.AddFunc("text/html", html.Minify)
-
-	// TTL for user sign-up token 5m
 
 	http.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		executePage(w, r, "index.tmpl", nil)
@@ -153,7 +164,11 @@ func main() {
 
 		sixDigits := rand.Intn(900000) + 100000
 		token := fmt.Sprintf("%d", sixDigits)
-		if _, err := db.Exec("INSERT INTO user_sign_up_email_tokens (username, email, token) VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET token = ?", username, email, token, token); err != nil {
+		if _, err := db.Exec(`
+			INSERT INTO user_sign_up_email_tokens (username, email, token) 
+			VALUES (?, ?, ?) 
+			ON CONFLICT DO UPDATE SET token = ?
+			`, username, email, token, token); err != nil {
 			log.Println(err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
@@ -244,9 +259,19 @@ func main() {
 		}
 		sessionId := base64.URLEncoding.EncodeToString(bs)
 
-		if _, err := db.Exec("INSERT INTO user_log_in_sessions (id, username) VALUES (?, ?)", sessionId, username); err != nil {
+		tx, err := db.BeginTx(r.Context(), nil)
+		if err != nil {
+			log.Panic(err)
+			return
+		}
+
+		if _, err := tx.Exec(`
+			INSERT INTO user_log_in_sessions (id, username) 
+			VALUES (?, ?)
+		`, sessionId, username); err != nil {
 			log.Panic(err)
 		}
+		tx.Commit()
 
 		cookie := http.Cookie{
 			Name:  "session",
@@ -261,7 +286,7 @@ func main() {
 		w.WriteHeader(http.StatusSeeOther)
 	}))
 
-	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("assets"))))
+	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
 		log.Fatal(err)
@@ -305,6 +330,11 @@ func executeTemplates(w http.ResponseWriter, data any, trigger string, names ...
 	}
 }
 
+type User struct {
+	Email    string
+	Username string
+}
+
 func getSessionUser(r *http.Request) (*User, bool, error) {
 	cookie, err := r.Cookie("session")
 	if err != nil {
@@ -316,9 +346,9 @@ func getSessionUser(r *http.Request) (*User, bool, error) {
 		SELECT
 		email,
 		users.username
-		FROM users
-		LEFT JOIN user_log_in_sessions ON users.username = user_log_in_sessions.username
-		WHERE user_log_in_sessions.id = ? 
+		FROM user_log_in_sessions
+		LEFT JOIN users ON user_log_in_sessions.username = users.username
+		WHERE id = ? 
 		LIMIT 1`, cookie.Value)
 
 	if err != nil {
@@ -327,7 +357,9 @@ func getSessionUser(r *http.Request) (*User, bool, error) {
 
 	u := User{}
 	if rows.Next() {
-		rows.Scan(u.Email, u.Username)
+		if err := rows.Scan(u.Email, u.Username); err != nil {
+			return nil, false, err
+		}
 	} else {
 		return nil, false, nil
 	}
@@ -345,9 +377,4 @@ func rateLimit(next http.HandlerFunc) http.HandlerFunc {
 
 		next(w, r)
 	}
-}
-
-type User struct {
-	Email    string
-	Username string
 }
