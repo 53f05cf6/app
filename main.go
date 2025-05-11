@@ -31,10 +31,10 @@ import (
 var (
 	port        = "8080"
 	db          *sql.DB
+	sessionStmt *sql.Stmt
 	tmpl        *template.Template
 	pageTmpl    map[string]*template.Template
 	minifier    *minify.M
-	sessionStmt *sql.Stmt
 )
 
 func main() {
@@ -118,7 +118,16 @@ func main() {
 	minifier.AddFunc("text/html", html.Minify)
 
 	http.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		executePage(w, r, "index.tmpl", nil)
+		u, _, err := getSessionUser(r)
+		if err != nil {
+			log.Println(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		executePage(w, r, "index.tmpl", map[string]any{
+			"user": u,
+		})
 	})
 
 	http.HandleFunc("GET /earthquake-master/{$}", func(w http.ResponseWriter, r *http.Request) {
@@ -324,7 +333,7 @@ func main() {
 		w.WriteHeader(http.StatusSeeOther)
 	}))
 
-	http.HandleFunc("GET /log-in/", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("GET /log-in/{$}", func(w http.ResponseWriter, r *http.Request) {
 		if _, ok, err := getSessionUser(r); err != nil {
 			log.Println(err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -335,6 +344,20 @@ func main() {
 		}
 
 		executePage(w, r, "log-in.tmpl", nil)
+	})
+
+	http.HandleFunc("POST /log-out/{$}", func(w http.ResponseWriter, r *http.Request) {
+		u, ok, err := getSessionUser(r)
+		if err != nil {
+			log.Println(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		} else if ok {
+			db.Exec("DELETE FROM user_log_in_sessions WHERE username = ?", u.Username)
+		}
+
+		w.Header().Add("HX-Redirect", "/")
+		w.WriteHeader(http.StatusSeeOther)
 	})
 
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServerFS(os.DirFS("static"))))
