@@ -29,11 +29,12 @@ import (
 )
 
 var (
-	port     = "8080"
-	db       *sql.DB
-	tmpl     *template.Template
-	pageTmpl map[string]*template.Template
-	minifier *minify.M
+	port        = "8080"
+	db          *sql.DB
+	tmpl        *template.Template
+	pageTmpl    map[string]*template.Template
+	minifier    *minify.M
+	sessionStmt *sql.Stmt
 )
 
 func main() {
@@ -58,6 +59,20 @@ func main() {
 	defer db.Close()
 	db.Exec("PRAGMA foreign_keys = ON")
 	db.Exec("PRAGMA journal_mode = WAL")
+
+	sessionStmt, err = db.Prepare(`
+		SELECT
+		users.username,
+		email
+		FROM user_log_in_sessions
+		LEFT JOIN users ON user_log_in_sessions.username = users.username
+		WHERE id = ? 
+		LIMIT 1
+	`)
+	defer sessionStmt.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	go func() {
 		ticker := time.NewTicker(time.Hour)
@@ -309,6 +324,19 @@ func main() {
 		w.WriteHeader(http.StatusSeeOther)
 	}))
 
+	http.HandleFunc("GET /log-in/", func(w http.ResponseWriter, r *http.Request) {
+		if _, ok, err := getSessionUser(r); err != nil {
+			log.Println(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		} else if ok {
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
+
+		executePage(w, r, "log-in.tmpl", nil)
+	})
+
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServerFS(os.DirFS("static"))))
 
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
@@ -366,15 +394,7 @@ func getSessionUser(r *http.Request) (*User, bool, error) {
 		return nil, false, nil
 	}
 
-	var user *User
-	rows, err := db.Query(`
-		SELECT
-		users.username,
-		email
-		FROM user_log_in_sessions
-		LEFT JOIN users ON user_log_in_sessions.username = users.username
-		WHERE id = ? 
-		LIMIT 1`, cookie.Value)
+	rows, err := sessionStmt.Query(cookie.Value)
 	if err != nil {
 		return nil, false, err
 	}
@@ -388,7 +408,7 @@ func getSessionUser(r *http.Request) (*User, bool, error) {
 		return nil, false, err
 	}
 
-	return user, true, nil
+	return &u, true, nil
 }
 
 func rateLimit(limit float64, burst int, next http.HandlerFunc) http.HandlerFunc {
