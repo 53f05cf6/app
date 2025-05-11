@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -64,7 +65,7 @@ func main() {
 
 		for {
 			<-ticker.C
-			cutoff := time.Now().Add(-7 * 24 * time.Hour).Unix()
+			cutoff := time.Now().Add(-7 * 24 * time.Hour)
 			if _, err := db.Exec("DELETE FROM user_log_in_sessions WHERE created_at < ?", cutoff); err != nil {
 				log.Printf("delete user log in sessions failed: %v\n", err)
 				continue
@@ -78,7 +79,7 @@ func main() {
 
 		for {
 			<-ticker.C
-			cutoff := time.Now().Add(-10 * time.Minute).Unix()
+			cutoff := time.Now().Add(-10 * time.Minute)
 			if _, err := db.Exec("DELETE FROM user_sign_up_email_tokens WHERE created_at < ?", cutoff); err != nil {
 				log.Printf("delete user sign up tokens failed: %v\n", err)
 				continue
@@ -111,17 +112,15 @@ func main() {
 
 	http.HandleFunc("GET /lau-lang/{$}", func(w http.ResponseWriter, r *http.Request) {
 		executePage(w, r, "lau-lang.tmpl", nil)
-
 	})
 
 	http.HandleFunc("GET /sign-up/{$}", func(w http.ResponseWriter, r *http.Request) {
 		if _, ok, err := getSessionUser(r); err != nil {
 			log.Println(err)
-			w.WriteHeader(http.StatusInternalServerError)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		} else if ok {
-			w.Header().Add("location", "/")
-			w.WriteHeader(http.StatusFound)
+			http.Redirect(w, r, "/", http.StatusFound)
 			return
 		}
 
@@ -132,15 +131,17 @@ func main() {
 		r.ParseForm()
 		username := r.FormValue("username")
 		email := r.FormValue("email")
+
 		// add validation
 
 		rows, err := db.Query(`
-			SELECT username, email FROM users
+			SELECT username, email
+			FROM users
 			WHERE username = ? OR email = ?
 			`, username, email)
 		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
 			log.Println(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
 		defer rows.Close()
@@ -157,35 +158,36 @@ func main() {
 			}
 		}
 		if len(conflictFields) != 0 {
-			w.WriteHeader(http.StatusConflict)
-			w.Write([]byte(strings.Join(conflictFields, ",")))
+			http.Error(w, strings.Join(conflictFields, ","), http.StatusConflict)
 			return
 		}
 
 		sixDigits := rand.Intn(900000) + 100000
-		token := fmt.Sprintf("%d", sixDigits)
+		token := strconv.FormatInt(int64(sixDigits), 10)
 		if _, err := db.Exec(`
 			INSERT INTO user_sign_up_email_tokens (username, email, token) 
 			VALUES (?, ?, ?) 
 			ON CONFLICT DO UPDATE SET token = ?
 			`, username, email, token, token); err != nil {
 			log.Println(err)
-			w.WriteHeader(http.StatusInternalServerError)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
+
 		ctx := r.Context()
 		cfg, err := config.LoadDefaultConfig(ctx)
 		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
 			log.Println(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
 		}
 
-		from := "台島 <no-reply@xn--kprw3s.tw>"
 		title := "信箱驗證碼"
+		from := "台島 <no-reply@xn--kprw3s.tw>"
 		var htmlBuffer bytes.Buffer
-		err = tmpl.ExecuteTemplate(&htmlBuffer, "sign-up-email", token)
-		if err != nil {
-			log.Panic(err)
+		if err = tmpl.ExecuteTemplate(&htmlBuffer, "sign-up-email", token); err != nil {
+			log.Println(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		}
 		body := htmlBuffer.String()
 
@@ -207,7 +209,7 @@ func main() {
 			Source: &from,
 		})
 
-		w.Header().Add("HX-Redirect", url.QueryEscape(fmt.Sprintf("/settings/?username=%s&email=%s", username, email)))
+		w.Header().Add("HX-Redirect", fmt.Sprintf("/verify-email/?username=%s&email=%s", url.QueryEscape(username), url.QueryEscape(email)))
 		w.WriteHeader(http.StatusSeeOther)
 	})
 
@@ -216,7 +218,7 @@ func main() {
 		username := query.Get("username")
 		email := query.Get("email")
 		if email == "" || username == "" {
-			w.WriteHeader(http.StatusNotFound)
+			http.NotFound(w, r)
 			return
 		}
 		executePage(w, r, "verify-email.tmpl", map[string]any{
@@ -225,11 +227,12 @@ func main() {
 		})
 	})
 
-	http.HandleFunc("POST /verify-email/{$}", rateLimit(func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("POST /verify-email/{$}", rateLimit(1, 10, func(w http.ResponseWriter, r *http.Request) {
 		r.ParseForm()
 		username := r.FormValue("username")
 		email := r.FormValue("email")
 		token := r.FormValue("token")
+
 		row := db.QueryRow(`
 			SELECT COUNT() FROM user_sign_up_email_tokens
 			WHERE username = ?
@@ -238,40 +241,60 @@ func main() {
 		`, username, email, token)
 		var count int
 		if row.Scan(&count) == sql.ErrNoRows {
-			w.WriteHeader(http.StatusNotFound)
+			http.NotFound(w, r)
 			return
 		}
 
-		if res, err := db.Exec("INSERT INTO users (username, email) VALUES (?, ?)", username, email); err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
+		tx, err := db.Begin()
+		if err != nil {
+			log.Println(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		if res, err := tx.Exec("INSERT INTO users (username, email) VALUES (?, ?)", username, email); err != nil {
+			tx.Rollback()
+			log.Println(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		} else if affected, err := res.RowsAffected(); err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
+			tx.Rollback()
+			log.Println("res.RowsAffected failed in verify-email")
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		} else if affected == 0 {
-			w.WriteHeader(http.StatusConflict)
+			tx.Rollback()
+			http.Error(w, http.StatusText(http.StatusConflict), http.StatusConflict)
+			return
+		}
+		if _, err := tx.Exec("DELETE FROM user_sign_up_email_tokens WHERE username = ? AND email = ?", username, email); err != nil {
+			tx.Rollback()
+			log.Println(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+		if err := tx.Commit(); err != nil {
+			tx.Rollback()
+			log.Println(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
 
 		bs := make([]byte, 32)
 		if _, err = crand.Read(bs); err != nil {
-			log.Panic(err)
+			log.Println(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		}
 		sessionId := base64.URLEncoding.EncodeToString(bs)
 
-		tx, err := db.BeginTx(r.Context(), nil)
-		if err != nil {
-			log.Panic(err)
-			return
-		}
-
-		if _, err := tx.Exec(`
+		if _, err := db.Exec(`
 			INSERT INTO user_log_in_sessions (id, username) 
 			VALUES (?, ?)
 		`, sessionId, username); err != nil {
-			log.Panic(err)
+			log.Println(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
 		}
-		tx.Commit()
 
 		cookie := http.Cookie{
 			Name:  "session",
@@ -286,7 +309,7 @@ func main() {
 		w.WriteHeader(http.StatusSeeOther)
 	}))
 
-	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+	http.Handle("/static/", http.StripPrefix("/static/", http.FileServerFS(os.DirFS("static"))))
 
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
 		log.Fatal(err)
@@ -309,8 +332,9 @@ func executePage(w http.ResponseWriter, r *http.Request, name string, data any) 
 
 	page := pageTmpl[name]
 	if err := page.ExecuteTemplate(minifyWriter, "page", data); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		log.Panic(err)
+		log.Println(err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
 	}
 }
 
@@ -324,8 +348,9 @@ func executeTemplates(w http.ResponseWriter, data any, trigger string, names ...
 
 	for _, name := range names {
 		if err := tmpl.ExecuteTemplate(minifyWriter, name, data); err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			log.Panic(err)
+			log.Println(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
 		}
 	}
 }
@@ -344,34 +369,33 @@ func getSessionUser(r *http.Request) (*User, bool, error) {
 	var user *User
 	rows, err := db.Query(`
 		SELECT
-		email,
-		users.username
+		users.username,
+		email
 		FROM user_log_in_sessions
 		LEFT JOIN users ON user_log_in_sessions.username = users.username
 		WHERE id = ? 
 		LIMIT 1`, cookie.Value)
-
 	if err != nil {
 		return nil, false, err
 	}
 
 	u := User{}
-	if rows.Next() {
-		if err := rows.Scan(u.Email, u.Username); err != nil {
-			return nil, false, err
-		}
-	} else {
+	if !rows.Next() {
 		return nil, false, nil
+	}
+
+	if err := rows.Scan(&u.Username, &u.Email); err != nil {
+		return nil, false, err
 	}
 
 	return user, true, nil
 }
 
-func rateLimit(next http.HandlerFunc) http.HandlerFunc {
-	limiter := rate.NewLimiter(1, 10)
+func rateLimit(limit float64, burst int, next http.HandlerFunc) http.HandlerFunc {
+	limiter := rate.NewLimiter(rate.Limit(limit), burst)
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !limiter.Allow() {
-			w.WriteHeader(http.StatusTooManyRequests)
+			http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
 			return
 		}
 
