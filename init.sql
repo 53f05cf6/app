@@ -10,6 +10,12 @@ CREATE TABLE user_sign_up_email_tokens(
 	created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE user_log_in_email_tokens(
+	email TEXT NOT NULL,
+	token TEXT NOT NULL,
+	created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE user_log_in_sessions(
 	username REFERENCES users,
 	id VARCHAR(256),

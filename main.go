@@ -102,6 +102,20 @@ func main() {
 		}
 	}()
 
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+
+		for {
+			<-ticker.C
+			cutoff := time.Now().Add(-10 * time.Minute)
+			if _, err := db.Exec("DELETE FROM user_log_in_email_tokens WHERE created_at < ?", cutoff); err != nil {
+				log.Printf("delete user log in tokens failed: %v\n", err)
+				continue
+			}
+		}
+	}()
+
 	tmpl = template.Must(template.New("base").Funcs(sprig.FuncMap()).ParseGlob("./template/*.tmpl"))
 	files, err := os.ReadDir("./page")
 	if err != nil {
@@ -233,11 +247,11 @@ func main() {
 			Source: &from,
 		})
 
-		w.Header().Add("HX-Redirect", fmt.Sprintf("/verify-email/?username=%s&email=%s", url.QueryEscape(username), url.QueryEscape(email)))
+		w.Header().Add("HX-Redirect", fmt.Sprintf("/verify-sign-up-email/?username=%s&email=%s", url.QueryEscape(username), url.QueryEscape(email)))
 		w.WriteHeader(http.StatusSeeOther)
 	})
 
-	http.HandleFunc("GET /verify-email/{$}", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("GET /verify-sign-up-email/{$}", func(w http.ResponseWriter, r *http.Request) {
 		query := r.URL.Query()
 		username := query.Get("username")
 		email := query.Get("email")
@@ -245,26 +259,25 @@ func main() {
 			http.NotFound(w, r)
 			return
 		}
-		executePage(w, r, "verify-email.tmpl", map[string]any{
+		executePage(w, r, "verify-sign-up-email.tmpl", map[string]any{
 			"username": username,
 			"email":    email,
 		})
 	})
 
-	http.HandleFunc("POST /verify-email/{$}", rateLimit(1, 10, func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("POST /verify-sign-up-email/{$}", rateLimit(1, 10, func(w http.ResponseWriter, r *http.Request) {
 		r.ParseForm()
 		username := r.FormValue("username")
 		email := r.FormValue("email")
 		token := r.FormValue("token")
 
-		row := db.QueryRow(`
+		var count int
+		if db.QueryRow(`
 			SELECT COUNT() FROM user_sign_up_email_tokens
 			WHERE username = ?
 			AND email = ?
 			AND token = ?
-		`, username, email, token)
-		var count int
-		if row.Scan(&count) == sql.ErrNoRows {
+		`, username, email, token).Scan(&count) == sql.ErrNoRows || count == 0 {
 			http.NotFound(w, r)
 			return
 		}
@@ -283,7 +296,7 @@ func main() {
 			return
 		} else if affected, err := res.RowsAffected(); err != nil {
 			tx.Rollback()
-			log.Println("res.RowsAffected failed in verify-email")
+			log.Println("res.RowsAffected failed in verify-sign-up-email")
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		} else if affected == 0 {
@@ -344,6 +357,151 @@ func main() {
 		}
 
 		executePage(w, r, "log-in.tmpl", nil)
+	})
+
+	http.HandleFunc("GET /log-in-by-email/{$}", func(w http.ResponseWriter, r *http.Request) {
+		if _, ok, err := getSessionUser(r); err != nil {
+			log.Println(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		} else if ok {
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
+
+		executePage(w, r, "log-in-by-email.tmpl", nil)
+	})
+
+	http.HandleFunc("POST /log-in-by-email/{$}", rateLimit(1, 10, func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		email := r.FormValue("email")
+
+		var username string
+		if db.QueryRow("SELECT username FROM users WHERE email = ?", email).Scan(&username); err == sql.ErrNoRows {
+		}
+
+		sixDigits := rand.Intn(900000) + 100000
+		token := strconv.FormatInt(int64(sixDigits), 10)
+		if _, err := db.Exec(`
+			INSERT INTO user_log_in_email_tokens (email, token) 
+			VALUES (?, ?)
+		`, email, token); err != nil {
+			log.Println(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		ctx := r.Context()
+		cfg, err := config.LoadDefaultConfig(ctx)
+		if err != nil {
+			log.Println(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		title := "信箱驗證碼"
+		from := "台島 <no-reply@xn--kprw3s.tw>"
+		var htmlBuffer bytes.Buffer
+		if err = tmpl.ExecuteTemplate(&htmlBuffer, "sign-up-email", token); err != nil {
+			log.Println(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		}
+		body := htmlBuffer.String()
+
+		client := ses.NewFromConfig(cfg)
+		client.SendEmail(ctx, &ses.SendEmailInput{
+			Destination: &types.Destination{
+				ToAddresses: []string{email},
+			},
+			Message: &types.Message{
+				Subject: &types.Content{
+					Data: &title,
+				},
+				Body: &types.Body{
+					Html: &types.Content{
+						Data: &body,
+					},
+				},
+			},
+			Source: &from,
+		})
+
+		w.Header().Add("HX-Redirect", fmt.Sprintf("/verify-log-in-email/?email=%s", url.QueryEscape(email)))
+		w.WriteHeader(http.StatusSeeOther)
+	}))
+
+	http.HandleFunc("GET /verify-log-in-email/{$}", func(w http.ResponseWriter, r *http.Request) {
+		if _, ok, err := getSessionUser(r); err != nil {
+			log.Println(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		} else if ok {
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
+
+		query := r.URL.Query()
+		email := query.Get("email")
+		if email == "" {
+			http.NotFound(w, r)
+			return
+		}
+
+		executePage(w, r, "verify-log-in-email.tmpl", map[string]any{
+			"email": email,
+		})
+	})
+
+	http.HandleFunc("POST /verify-log-in-email/{$}", func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		email := r.FormValue("email")
+		token := r.FormValue("token")
+
+		var username string
+		if db.QueryRow(`
+			SELECT username 
+			FROM user_log_in_email_tokens
+			LEFT JOIN users ON user_log_in_email_tokens.email = users.email
+			WHERE user_log_in_email_tokens.email = ?
+			AND token = ?
+		`, email, token).Scan(&username) == sql.ErrNoRows {
+			http.NotFound(w, r)
+			return
+		}
+
+		if _, err := db.Exec("DELETE FROM user_log_in_email_tokens WHERE email = ? AND token = ?", email, token); err != nil {
+			log.Println(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		bs := make([]byte, 32)
+		if _, err = crand.Read(bs); err != nil {
+			log.Println(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		}
+		sessionId := base64.URLEncoding.EncodeToString(bs)
+
+		if _, err := db.Exec(`
+			INSERT INTO user_log_in_sessions (id, username) 
+			VALUES (?, ?)
+		`, sessionId, username); err != nil {
+			log.Println(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		cookie := http.Cookie{
+			Name:  "session",
+			Value: sessionId,
+			Path:  "/", Expires: time.Now().Add(7 * 24 * time.Hour),
+			HttpOnly: true,
+			Secure:   true,
+		}
+
+		http.SetCookie(w, &cookie)
+		w.Header().Add("HX-Redirect", "/")
+		w.WriteHeader(http.StatusSeeOther)
 	})
 
 	http.HandleFunc("POST /log-out/{$}", func(w http.ResponseWriter, r *http.Request) {

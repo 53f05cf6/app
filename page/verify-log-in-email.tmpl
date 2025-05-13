@@ -2,8 +2,7 @@
   <header></header>
   <main>
     <h1>驗證電子郵件</h1>
-    <form hx-post="/verify-email/" class="flex-v gap-1">
-      <input name="username" type="hidden" value="{{ .username }}" />
+    <form hx-post="/verify-log-in-email/" class="flex-v gap-1">
       <input name="email" type="hidden" value="{{ .email }}" />
       <div class="input-group">
         <label for="token">6位數驗證碼</label>
