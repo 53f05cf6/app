@@ -60,6 +60,7 @@ func main() {
 	defer db.Close()
 	db.Exec("PRAGMA foreign_keys = ON")
 	db.Exec("PRAGMA journal_mode = WAL")
+	db.Exec("PRAGMA busy_timeout = 10000")
 
 	sessionStmt, err = db.Prepare(`
 		SELECT
