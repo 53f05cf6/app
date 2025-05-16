@@ -7,6 +7,8 @@
       />
       <h1>台島</h1>
       <p>台灣人的地盤</p>
+    </section>
+    <section class="flex-v gap-1 items-center">
       {{ if eq .user nil }}
         <div class="flex-h gap-05">
           <a class="button button-primary button-sm" href="/log-in/"> 登入</a>
@@ -15,18 +17,14 @@
           >
         </div>
       {{ else }}
-        Hi,
-        {{ .user.Username }}
+        <h2>
+          Hi,
+          {{ .user.Username }}
+        </h2>
         <form hx-post="/log-out/">
           <input type="submit" class="button button-danger" value="登出" />
         </form>
       {{ end }}
-    </section>
-
-    <section class="flex-v gap-025">
-      <a class="button button-soft" href="/earthquake-master/"
-        >地震達人(開發中)</a
-      >
     </section>
   </main>
 {{ end }}

@@ -16,7 +16,7 @@
         </div>
         <input class="button-primary" value="確認" type="submit" />
       </form>
-      <ul id="error" class="error-msg"></ul>
+      <div id="error" class="error-msg"></div>
       <p class="text-secondary text-center">
         還沒註冊嗎?
         <a href="/sign-up/" class="text-link">前往註冊</a>
@@ -24,22 +24,12 @@
     </div>
   </main>
   <script>
-    const fieldNameMap = {
-      email: "電子郵件",
-    };
     htmx.on("htmx:responseError", (e) => {
       switch (e.detail.xhr.status) {
-        case 409:
-          document.getElementById("username").classList.remove("input-error");
-          document.getElementById("email").classList.remove("input-error");
-          document.getElementById("error").innerHTML = "";
-          const fields = e.detail.xhr.response.split(",");
-          fields.forEach((field) => {
-            document.getElementById(field).classList.add("input-error");
-            const li = document.createElement("li");
-            li.textContent = `你輸入的「${fieldNameMap[field]}」已經存在`;
-            document.getElementById("error").appendChild(li);
-          });
+        case 404:
+          document.getElementById("email").classList.add("input-error");
+          document.getElementById("error").textContent =
+            "你輸入的「Email」不存在";
           break;
       }
     });

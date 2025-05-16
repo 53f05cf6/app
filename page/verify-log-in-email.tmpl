@@ -1,7 +1,7 @@
 {{ define "body" }}
   <header></header>
   <main>
-    <h1>驗證電子郵件</h1>
+    <h1>登入電子郵件驗證</h1>
     <form hx-post="/verify-log-in-email/" class="flex-v gap-1">
       <input name="email" type="hidden" value="{{ .email }}" />
       <div class="input-group">
@@ -16,7 +16,18 @@
           placeholder="123456"
         />
       </div>
+      <div id="error" class="error-msg"></div>
       <input class="button-primary" value="確認" type="submit" />
     </form>
   </main>
+  <script>
+    htmx.on("htmx:responseError", (e) => {
+      switch (e.detail.xhr.status) {
+        case 404:
+          document.getElementById("token").classList.add("input-error");
+          document.getElementById("error").textContent = "你輸入的驗證碼錯誤";
+          break;
+      }
+    });
+  </script>
 {{ end }}

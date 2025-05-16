@@ -6,6 +6,7 @@ import (
 	crand "crypto/rand"
 	"database/sql"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
@@ -80,7 +81,7 @@ func main() {
 
 		for {
 			<-ticker.C
-			cutoff := time.Now().Add(-7 * 24 * time.Hour)
+			cutoff := time.Now().UTC().Add(-7 * 24 * time.Hour)
 			if _, err := db.Exec("DELETE FROM user_log_in_sessions WHERE created_at < ?", cutoff); err != nil {
 				log.Printf("delete user log in sessions failed: %v\n", err)
 				continue
@@ -94,7 +95,7 @@ func main() {
 
 		for {
 			<-ticker.C
-			cutoff := time.Now().Add(-10 * time.Minute)
+			cutoff := time.Now().UTC().Add(-10 * time.Minute)
 			if _, err := db.Exec("DELETE FROM user_sign_up_email_tokens WHERE created_at < ?", cutoff); err != nil {
 				log.Printf("delete user sign up tokens failed: %v\n", err)
 				continue
@@ -108,7 +109,7 @@ func main() {
 
 		for {
 			<-ticker.C
-			cutoff := time.Now().Add(-10 * time.Minute)
+			cutoff := time.Now().UTC().Add(-10 * time.Minute)
 			if _, err := db.Exec("DELETE FROM user_log_in_email_tokens WHERE created_at < ?", cutoff); err != nil {
 				log.Printf("delete user log in tokens failed: %v\n", err)
 				continue
@@ -171,7 +172,6 @@ func main() {
 		email := r.FormValue("email")
 
 		// add validation
-
 		rows, err := db.Query(`
 			SELECT username, email
 			FROM users
@@ -377,7 +377,12 @@ func main() {
 		email := r.FormValue("email")
 
 		var username string
-		if db.QueryRow("SELECT username FROM users WHERE email = ?", email).Scan(&username); err == sql.ErrNoRows {
+		if err := db.QueryRow("SELECT username FROM users WHERE email = ?", email).Scan(&username); errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		} else if err != nil {
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
 		}
 
 		sixDigits := rand.Intn(900000) + 100000
