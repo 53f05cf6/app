@@ -25,18 +25,18 @@ CREATE TABLE user_log_in_sessions(
 CREATE TABLE bsky_feed_taiwanese_users(
 	did TEXT NOT NULL PRIMARY KEY,
 	created_at TEXT DEFAULT CURRENT_TIMESTAMP
-)
+);
 
 CREATE INDEX idx_created_at_desc_did ON bsky_feed_taiwanese_users(created_at DESC, did);
 
 CREATE TABLE bsky_feed_taiwanese_block_users(
 	did TEXT NOT NULL PRIMARY KEY
-)
+);
 
 CREATE TABLE bsky_feed_taiwanese_posts(
 	uri TEXT NOT NULL PRIMARY KEY,
 	cid TEXT NOT NULL, 
 	created_at TEXT NOT NULL
-)
+);
 
-CREATE INDEX idx_created_at_desc_cid ON bsky_feed_taiwanese_posts(created_at DESC, cid)
+CREATE INDEX idx_created_at_desc_cid ON bsky_feed_taiwanese_posts(created_at DESC, cid);
