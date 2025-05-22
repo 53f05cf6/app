@@ -6,27 +6,34 @@ import (
 	crand "crypto/rand"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
 	"io"
 	"log"
-	"math/rand"
+	mrand "math/rand"
 	"net/http"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Masterminds/sprig/v3"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ses"
 	"github.com/aws/aws-sdk-go-v2/service/ses/types"
+	"github.com/gorilla/websocket"
 	"github.com/tdewolff/minify/v2"
 	"github.com/tdewolff/minify/v2/html"
 	"golang.org/x/time/rate"
 	_ "modernc.org/sqlite"
+)
+
+const (
+	DID = "did:plc:owthkwfcemjd2ydv42fvgsin"
 )
 
 var (
@@ -37,6 +44,26 @@ var (
 	pageTmpl    map[string]*template.Template
 	minifier    *minify.M
 )
+
+type Event struct {
+	DID    string `json:"did"`
+	TimeUS int64  `json:"time_us"`
+	Kind   string `json:"kind"`
+	Commit struct {
+		Rev        string `json:"rev"`
+		Operation  string `json:"operation"`
+		Collection string `json:"collection"`
+		Rkey       string `json:"rkey"`
+		Record     struct {
+			Type      string    `json:"$type"`
+			CreatedAt time.Time `json:"createdAt"`
+			Langs     []string  `json:"langs"`
+			Text      string    `json:"text"`
+			Reply     any       `json:"reply"`
+		} `json:"record"`
+		CID string `json:"cid"`
+	} `json:"commit"`
+}
 
 func main() {
 	if v, ok := os.LookupEnv("LOG_FILE"); ok {
@@ -58,9 +85,16 @@ func main() {
 		log.Fatal(err)
 	}
 	defer db.Close()
-	db.Exec("PRAGMA foreign_keys = ON")
-	db.Exec("PRAGMA journal_mode = WAL")
-	db.Exec("PRAGMA busy_timeout = 10000")
+
+	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		log.Fatal(err)
+	}
+	if _, err := db.Exec("PRAGMA journal_mode = WAL"); err != nil {
+		log.Fatal(err)
+	}
+	if _, err := db.Exec("PRAGMA busy_timeout = 10000"); err != nil {
+		log.Fatal(err)
+	}
 
 	sessionStmt, err = db.Prepare(`
 		SELECT
@@ -82,7 +116,7 @@ func main() {
 
 		for {
 			<-ticker.C
-			cutoff := time.Now().UTC().Add(-7 * 24 * time.Hour)
+			cutoff := time.Now().UTC().Add(-7 * 24 * time.Hour).Format(time.DateTime)
 			if _, err := db.Exec("DELETE FROM user_log_in_sessions WHERE created_at < ?", cutoff); err != nil {
 				log.Printf("delete user log in sessions failed: %v\n", err)
 				continue
@@ -96,24 +130,136 @@ func main() {
 
 		for {
 			<-ticker.C
-			cutoff := time.Now().UTC().Add(-10 * time.Minute)
+			cutoff := time.Now().UTC().Add(-10 * time.Minute).Format(time.DateTime)
 			if _, err := db.Exec("DELETE FROM user_sign_up_email_tokens WHERE created_at < ?", cutoff); err != nil {
 				log.Printf("delete user sign up tokens failed: %v\n", err)
-				continue
+			}
+			if _, err := db.Exec("DELETE FROM user_log_in_email_tokens WHERE created_at < ?", cutoff); err != nil {
+				log.Printf("delete user log in tokens failed: %v\n", err)
 			}
 		}
 	}()
 
+	cursorFile, err := os.OpenFile("jetstream_cursor.txt", os.O_RDWR, 0600)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer cursorFile.Close()
+
+	cursorBytes := make([]byte, 16)
+	if _, err := cursorFile.Read(cursorBytes); errors.Is(err, io.EOF) {
+		defaultTimestamp := []byte("1747670400000000")
+		if _, err := cursorFile.WriteAt(defaultTimestamp, 0); err != nil {
+			log.Fatal(err)
+		}
+		cursorBytes = defaultTimestamp
+	} else if err != nil {
+		log.Fatal(err)
+	}
+
+	var mux sync.Mutex
 	go func() {
-		ticker := time.NewTicker(time.Minute)
+		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
 
 		for {
+			mux.Lock()
+			if _, err := cursorFile.WriteAt(cursorBytes, 0); err != nil {
+				log.Fatal(err)
+			}
+			mux.Unlock()
 			<-ticker.C
-			cutoff := time.Now().UTC().Add(-10 * time.Minute)
-			if _, err := db.Exec("DELETE FROM user_log_in_email_tokens WHERE created_at < ?", cutoff); err != nil {
-				log.Printf("delete user log in tokens failed: %v\n", err)
+		}
+	}()
+
+	go func() {
+		rows, err := db.Query("SELECT did FROM bsky_feed_taiwanese_users")
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		usersSet := map[string]struct{}{}
+		for rows.Next() {
+			var did string
+			if err := rows.Scan(&did); err != nil {
+				log.Fatal(err)
+			}
+			usersSet[did] = struct{}{}
+		}
+
+		conn, _, err := websocket.DefaultDialer.Dial(fmt.Sprintf("wss://jetstream2.us-west.bsky.network/subscribe?wantedCollections=app.bsky.feed.post&cursor=%s", string(cursorBytes)), http.Header{})
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer conn.Close()
+
+		for {
+
+			evt := Event{}
+			err := conn.ReadJSON(&evt)
+			if err != nil {
+				log.Println(err)
+				conn.Close()
+
+				for {
+					newConn, _, err := websocket.DefaultDialer.Dial(fmt.Sprintf("wss://jetstream2.us-west.bsky.network/subscribe?wantedCollections=app.bsky.feed.post&cursor=%s", string(cursorBytes)), http.Header{})
+					if err != nil {
+						fmt.Println(err)
+						time.Sleep(5 * time.Second)
+						continue
+					}
+
+					conn = newConn
+					break
+				}
+
 				continue
+			}
+
+			mux.Lock()
+			cursorBytes = []byte(strconv.FormatInt(evt.TimeUS, 10))
+			mux.Unlock()
+
+			// TODO: use facet
+			if strings.Contains(evt.Commit.Record.Text, "#台灣人+1") {
+				if res, err := db.Query("SELECT * FROM bsky_feed_taiwanese_block_users WHERE did = ?", evt.DID); err != nil {
+					log.Println(err)
+					continue
+				} else if res.Next() {
+					continue
+				}
+
+				if _, err := db.Exec(`
+					INSERT INTO bsky_feed_taiwanese_users (did)
+					VALUES (?)
+					ON CONFLICT DO NOTHING
+				`, evt.DID); err != nil {
+					log.Println(err)
+					continue
+				}
+
+				usersSet[evt.DID] = struct{}{}
+				log.Printf("new Taiwanese: %s\n", evt.DID)
+			}
+
+			if _, ok := usersSet[evt.DID]; ok && evt.Commit.Record.Reply == nil {
+				uri := fmt.Sprintf("at://%s/%s/%s", evt.DID, evt.Commit.Collection, evt.Commit.Rkey)
+				switch evt.Commit.Operation {
+				case "create":
+					createdAt := evt.Commit.Record.CreatedAt.Format(time.RFC3339)
+					if _, err := db.Exec(`
+					INSERT INTO bsky_feed_taiwanese_posts (uri, cid, created_at)
+					VALUES (?, ?, ?)
+					ON CONFLICT DO NOTHING
+				`, uri, evt.Commit.CID, createdAt); err != nil {
+						log.Println(err)
+					}
+				case "delete":
+					if _, err := db.Exec("DELETE FROM bsky_feed_taiwanese_posts WHERE uri = ?", uri); err != nil {
+						log.Println(err)
+					}
+				}
+
 			}
 		}
 	}()
@@ -144,6 +290,121 @@ func main() {
 		executePage(w, r, "index.tmpl", map[string]any{
 			"user": u,
 		})
+	})
+
+	http.HandleFunc("GET /xrpc/app.bsky.feed.describeFeedGenerator", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		m := map[string]any{
+			"did": "did:web:xn--kprw3s.tw",
+			"feeds": []map[string]string{
+				{
+					"uri": "at://did:plc:owthkwfcemjd2ydv42fvgsin/app.bsky.feed.generator/all-taiwanese",
+				},
+			},
+		}
+		json.NewEncoder(w).Encode(m)
+	})
+
+	http.HandleFunc("GET /xrpc/app.bsky.feed.getFeedSkeleton", func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query()
+		feed := query.Get("feed")
+		if feed != "at://did:plc:owthkwfcemjd2ydv42fvgsin/app.bsky.feed.generator/all-taiwanese" {
+			http.NotFound(w, r)
+			return
+		}
+
+		limit := 50
+		limitStr := query.Get("limit")
+		if len(limitStr) > 0 {
+			l, err := strconv.Atoi(limitStr)
+			if err != nil {
+				http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+				return
+			} else if l < 1 || l > 100 {
+				http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+				return
+			}
+
+			limit = l
+		}
+
+		createdAt := ""
+		cid := ""
+		cursor := query.Get("cursor")
+		if len(cursor) > 0 {
+			parts := strings.Split(cursor, "::")
+			if len(parts) != 2 {
+				http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+				return
+			}
+
+			createdAt, cid = parts[0], parts[1]
+		}
+
+		fmt.Println(createdAt, cid)
+		var rows *sql.Rows
+		if createdAt != "" && cid != "" {
+			rows, err = db.Query(`
+			SELECT uri, created_at, cid FROM bsky_feed_taiwanese_posts 
+			WHERE created_at < ? OR (created_at = ? AND cid > ?)
+			ORDER BY created_at DESC, cid
+			LIMIT ?
+		`, createdAt, createdAt, cid, limit)
+		} else {
+			rows, err = db.Query(`
+			SELECT uri, created_at, cid FROM bsky_feed_taiwanese_posts 
+			ORDER BY created_at DESC, cid
+			LIMIT ?
+		`, limit)
+		}
+		if err != nil {
+			log.Println(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		feeds := []map[string]string{}
+		lastCreatedAt := ""
+		lastCid := ""
+		for rows.Next() {
+			uri := ""
+			if err := rows.Scan(&uri, &lastCreatedAt, &lastCid); err != nil {
+				log.Println(err)
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				return
+			}
+			feeds = append(feeds, map[string]string{
+				"post": uri,
+			})
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+
+		m := map[string]any{
+			"feed": feeds,
+		}
+
+		if len(feeds) >= limit {
+			m["cursor"] = fmt.Sprintf("%s::%s", lastCreatedAt, lastCid)
+		}
+
+		json.NewEncoder(w).Encode(m)
+	})
+
+	http.HandleFunc("GET /.well-known/did.json", func(w http.ResponseWriter, r *http.Request) {
+		m := map[string]any{
+			"@context": []string{"https://www.w3.org/ns/did/v1"},
+			"id":       "did:web:xn--kprw3s.tw",
+			"service": []map[string]string{
+				{
+					"id":              "#bsky_fg",
+					"type":            "BskyFeedGenerator",
+					"serviceEndpoint": "https://xn--kprw3s.tw",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(m)
 	})
 
 	http.HandleFunc("GET /earthquake-master/{$}", func(w http.ResponseWriter, r *http.Request) {
@@ -201,7 +462,7 @@ func main() {
 			return
 		}
 
-		sixDigits := rand.Intn(900000) + 100000
+		sixDigits := mrand.Intn(900000) + 100000
 		token := strconv.FormatInt(int64(sixDigits), 10)
 		if _, err := db.Exec(`
 			INSERT INTO user_sign_up_email_tokens (username, email, token) 
@@ -386,7 +647,7 @@ func main() {
 			return
 		}
 
-		sixDigits := rand.Intn(900000) + 100000
+		sixDigits := mrand.Intn(900000) + 100000
 		token := strconv.FormatInt(int64(sixDigits), 10)
 		if _, err := db.Exec(`
 			INSERT INTO user_log_in_email_tokens (email, token) 

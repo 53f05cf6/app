@@ -1,4 +1,5 @@
 db*
+jetstream_cursor.txt
 log
 node_modules
 tmp
