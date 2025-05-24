@@ -9,22 +9,9 @@
       <p>台灣人的地盤</p>
     </section>
     <section class="flex-v gap-1 items-center">
-      {{ if eq .user nil }}
-        <div class="flex-h gap-05">
-          <a class="button button-primary button-sm" href="/log-in/"> 登入</a>
-          <a class="button button-secondary button-sm" href="/sign-up/">
-            註冊</a
-          >
-        </div>
-      {{ else }}
-        <h2>
-          Hi,
-          {{ .user.Username }}
-        </h2>
-        <form hx-post="/log-out/">
-          <input type="submit" class="button button-danger" value="登出" />
-        </form>
-      {{ end }}
+      <a href="/bsky-taiwanese" class="button button-soft"
+        >🦋Bluesky動態源 #台灣人 成員</a
+      >
     </section>
   </main>
 {{ end }}
