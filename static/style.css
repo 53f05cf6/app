@@ -59,6 +59,11 @@ button {
 
 ul {
   margin: 0;
+  padding: 0;
+}
+
+li {
+  padding: 0;
 }
 
 table {
@@ -235,6 +240,10 @@ input[type="submit"] {
   align-items: center;
 }
 
+.flex-wrap {
+  flex-wrap: wrap;
+}
+
 .logo {
   width: 2rem;
   height: 2rem;
@@ -314,7 +323,7 @@ input[type="submit"] {
 }
 
 .justify-center {
-  justify-center: center;
+  justify-content: center;
 }
 
 .items-center {
@@ -347,4 +356,36 @@ input[type="submit"] {
 
 .gap-4 {
   gap: 4rem;
+}
+
+.size-1 {
+  width: 1rem;
+  height: 1rem;
+}
+
+.size-2 {
+  width: 2rem;
+  height: 2rem;
+}
+
+.size-3 {
+  width: 2rem;
+  height: 2rem;
+}
+
+.size-4 {
+  width: 4rem;
+  height: 4rem;
+}
+
+.rounded {
+  border-radius: 50%;
+}
+
+.list-style-none {
+  list-style: none;
+}
+
+.p-1 {
+  padding: 1rem;
 }

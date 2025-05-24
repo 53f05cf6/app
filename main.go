@@ -28,6 +28,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/tdewolff/minify/v2"
 	"github.com/tdewolff/minify/v2/html"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
 	_ "modernc.org/sqlite"
 )
@@ -405,6 +406,94 @@ func main() {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(m)
+	})
+
+	var pMux sync.Mutex
+	bskyUsersProfiles := map[string]*BskyUserProfile{}
+	http.HandleFunc("GET /bsky-taiwanese/{$}", func(w http.ResponseWriter, r *http.Request) {
+		rows, err := db.Query(`
+			SELECT did FROM bsky_feed_taiwanese_users
+			ORDER BY created_at DESC, did
+		`)
+		if err != nil {
+			fmt.Println(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		profiles := []*BskyUserProfile{}
+		unpopulatedProfiles := []*BskyUserProfile{}
+		for rows.Next() {
+			did := ""
+			if rows.Scan(&did); err != nil {
+				fmt.Println(err)
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				return
+			}
+
+			if p, ok := bskyUsersProfiles[did]; ok {
+				profiles = append(profiles, p)
+			} else {
+				newP := &BskyUserProfile{
+					DID: did,
+				}
+				bskyUsersProfiles[did] = newP
+				unpopulatedProfiles = append(unpopulatedProfiles, newP)
+				profiles = append(profiles, newP)
+			}
+
+		}
+
+		eg, _ := errgroup.WithContext(r.Context())
+		eg.SetLimit(10)
+		if len(unpopulatedProfiles) > 0 {
+			fmt.Println(len(unpopulatedProfiles))
+			for i := 0; i < len(unpopulatedProfiles); i += 25 {
+				start := i
+				var end = i + 25
+				if len(unpopulatedProfiles) < i+25 {
+					end = len(unpopulatedProfiles)
+				}
+				eg.Go(func() error {
+					actors := []string{}
+					for _, p := range unpopulatedProfiles[start:end] {
+						actors = append(actors, fmt.Sprintf("actors=%s", p.DID))
+					}
+
+					res, err := http.Get("https://public.api.bsky.app/xrpc/app.bsky.actor.getProfiles?" + strings.Join(actors, "&"))
+					if err != nil {
+						fmt.Println(err)
+						return err
+					}
+
+					r := map[string][]BskyUserProfile{}
+					if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
+						fmt.Println(err)
+						return err
+					}
+					res.Body.Close()
+
+					for _, rp := range r["profiles"] {
+						pMux.Lock()
+						bskyUsersProfiles[rp.DID].DID = rp.DID
+						bskyUsersProfiles[rp.DID].Avatar = rp.Avatar
+						bskyUsersProfiles[rp.DID].DisplayName = rp.DisplayName
+						bskyUsersProfiles[rp.DID].Handle = rp.Handle
+						pMux.Unlock()
+					}
+
+					return nil
+				})
+			}
+		}
+
+		if err := eg.Wait(); err != nil {
+			fmt.Println(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		executePage(w, r, "bsky-feed-all-taiwanese.tmpl", profiles)
 	})
 
 	http.HandleFunc("GET /earthquake-master/{$}", func(w http.ResponseWriter, r *http.Request) {
@@ -857,6 +946,13 @@ func getSessionUser(r *http.Request) (*User, bool, error) {
 	}
 
 	return &u, true, nil
+}
+
+type BskyUserProfile struct {
+	DID         string `json:"did"`
+	Handle      string `json:"handle"`
+	Avatar      string `json:"avatar"`
+	DisplayName string `json:"displayName"`
 }
 
 func rateLimit(limit float64, burst int, next http.HandlerFunc) http.HandlerFunc {

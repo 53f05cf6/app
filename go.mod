@@ -9,6 +9,7 @@ require (
 	github.com/bluesky-social/indigo v0.0.0-20250516010818-f8de501bd6a0
 	github.com/gorilla/websocket v1.5.3
 	github.com/tdewolff/minify/v2 v2.23.3
+	golang.org/x/sync v0.12.0
 	golang.org/x/time v0.11.0
 	modernc.org/sqlite v1.37.0
 )

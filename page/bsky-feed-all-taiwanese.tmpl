@@ -1,0 +1,24 @@
+{{ define "body" }}
+  <main>
+    <h1>🦋Bluesky動態源 #台灣人 成員</h1>
+    <ul class="flex-h justify-center flex-wrap list-style-none">
+      {{ range . }}
+        <li>
+          <a
+            href="https://bsky.app/profile/{{ .Handle }}"
+            class="button button-soft"
+          >
+            <img class="size-3 rounded" src="{{ .Avatar }}" />
+            <div>
+              {{ if .DisplayName }}
+                {{ .DisplayName }}
+              {{ else }}
+                {{ .Handle }}
+              {{ end }}
+            </div>
+          </a>
+        </li>
+      {{ end }}
+    </ul>
+  </main>
+{{ end }}
