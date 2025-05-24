@@ -205,7 +205,7 @@ func main() {
 				for {
 					newConn, _, err := websocket.DefaultDialer.Dial(fmt.Sprintf("wss://jetstream2.us-west.bsky.network/subscribe?wantedCollections=app.bsky.feed.post&cursor=%s", string(cursorBytes)), http.Header{})
 					if err != nil {
-						fmt.Println(err)
+						log.Println(err)
 						time.Sleep(5 * time.Second)
 						continue
 					}
@@ -294,6 +294,7 @@ func main() {
 	})
 
 	http.HandleFunc("GET /xrpc/app.bsky.feed.describeFeedGenerator", func(w http.ResponseWriter, r *http.Request) {
+		log.Println(r.URL.String())
 		w.Header().Set("Content-Type", "application/json")
 		m := map[string]any{
 			"did": "did:web:xn--kprw3s.tw",
@@ -307,6 +308,7 @@ func main() {
 	})
 
 	http.HandleFunc("GET /xrpc/app.bsky.feed.getFeedSkeleton", func(w http.ResponseWriter, r *http.Request) {
+		log.Println(r.URL.String())
 		query := r.URL.Query()
 		feed := query.Get("feed")
 		if feed != "at://did:plc:owthkwfcemjd2ydv42fvgsin/app.bsky.feed.generator/all-taiwanese" {
@@ -342,7 +344,7 @@ func main() {
 			createdAt, cid = parts[0], parts[1]
 		}
 
-		fmt.Println(createdAt, cid)
+		log.Println(createdAt, cid)
 		var rows *sql.Rows
 		if createdAt != "" && cid != "" {
 			rows, err = db.Query(`
@@ -393,6 +395,7 @@ func main() {
 	})
 
 	http.HandleFunc("GET /.well-known/did.json", func(w http.ResponseWriter, r *http.Request) {
+		log.Println(r.URL.String())
 		m := map[string]any{
 			"@context": []string{"https://www.w3.org/ns/did/v1"},
 			"id":       "did:web:xn--kprw3s.tw",
@@ -416,7 +419,7 @@ func main() {
 			ORDER BY created_at DESC, did
 		`)
 		if err != nil {
-			fmt.Println(err)
+			log.Println(err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
@@ -426,7 +429,7 @@ func main() {
 		for rows.Next() {
 			did := ""
 			if rows.Scan(&did); err != nil {
-				fmt.Println(err)
+				log.Println(err)
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
 			}
@@ -447,7 +450,7 @@ func main() {
 		eg, _ := errgroup.WithContext(r.Context())
 		eg.SetLimit(10)
 		if len(unpopulatedProfiles) > 0 {
-			fmt.Println(len(unpopulatedProfiles))
+			log.Println(len(unpopulatedProfiles))
 			for i := 0; i < len(unpopulatedProfiles); i += 25 {
 				start := i
 				var end = i + 25
@@ -462,13 +465,13 @@ func main() {
 
 					res, err := http.Get("https://public.api.bsky.app/xrpc/app.bsky.actor.getProfiles?" + strings.Join(actors, "&"))
 					if err != nil {
-						fmt.Println(err)
+						log.Println(err)
 						return err
 					}
 
 					r := map[string][]BskyUserProfile{}
 					if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
-						fmt.Println(err)
+						log.Println(err)
 						return err
 					}
 					res.Body.Close()
@@ -488,7 +491,7 @@ func main() {
 		}
 
 		if err := eg.Wait(); err != nil {
-			fmt.Println(err)
+			log.Println(err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
